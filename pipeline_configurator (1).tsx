@@ -31,7 +31,7 @@ const paramSchema = [
   { key: 'QC_batch_col', type: 'string', default: 'batch' },
   { key: 'QC_barcode_filter', type: 'select', options: ['none', 'knee', 'knee2'], default: 'knee2' },
   
-  { key: 'GUIDE_ASSIGNMENT_capture_method', type: 'string', default: 'crop-seq' },
+  { key: 'GUIDE_ASSIGNMENT_capture_method', type: 'select', options: ['crop-seq', 'direct-capture'], default: 'crop-seq' },
   { key: 'GUIDE_ASSIGNMENT_cleanser_probability_threshold', type: 'number', default: 1 },
   { key: 'GUIDE_ASSIGNMENT_SCEPTRE_probability_threshold', type: 'string', default: '0.8' },
   { key: 'GUIDE_ASSIGNMENT_SCEPTRE_n_em_rep', type: 'string', default: '5' },

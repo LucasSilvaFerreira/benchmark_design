@@ -6,6 +6,14 @@ Static GitHub Pages app for creating per-sample CRISPR pipeline run bundles.
 
 Publish this directory with GitHub Pages. The entrypoint is `index.html`; it loads `pipeline_configurator (1).tsx`, `pipeline_runner.py`, `requirements.txt`, and `RUNNER_README.md` from the same directory.
 
+The page includes three tabs:
+
+- `Configurator`: the sample table and export workflow.
+- `GitHub & Install`: links to the CRISPR pipeline repository/docs and dependency setup commands.
+- `How To Use`: a compact runbook for configuring, exporting, launching, checking logs, and resuming samples.
+
+`GUIDE_ASSIGNMENT_capture_method` is a dropdown with the documented pipeline values `crop-seq` and `direct-capture`.
+
 ## Local Preview
 
 Because the page fetches local assets, serve it through a local HTTP server instead of opening the file directly:

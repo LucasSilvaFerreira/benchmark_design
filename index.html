@@ -16,15 +16,225 @@
       body {
         margin: 0;
         background: #f8fafc;
+        color: #0f172a;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 24px;
+        border-bottom: 1px solid #e2e8f0;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(10px);
+      }
+
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 220px;
+      }
+
+      .brand-title {
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .brand-subtitle {
+        color: #64748b;
+        font-size: 12px;
+      }
+
+      .tabs {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .tab-button {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .tab-button[aria-selected="true"] {
+        border-color: #0f172a;
+        background: #0f172a;
+        color: #ffffff;
+      }
+
+      .tab-panel[hidden] {
+        display: none;
+      }
+
+      .docs-page {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 32px 24px 56px;
+      }
+
+      .docs-page h1 {
+        margin: 0 0 12px;
+        font-size: 30px;
+        line-height: 1.15;
+      }
+
+      .docs-page h2 {
+        margin: 28px 0 10px;
+        font-size: 18px;
+      }
+
+      .docs-page p,
+      .docs-page li {
+        color: #475569;
+        line-height: 1.6;
+      }
+
+      .docs-page a {
+        color: #1d4ed8;
+        font-weight: 600;
+      }
+
+      .docs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      .doc-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 18px;
+      }
+
+      .code-block {
+        overflow-x: auto;
+        border-radius: 8px;
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 14px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 760px) {
+        .site-header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .tab-button {
+          flex: 1 1 auto;
+        }
       }
     </style>
   </head>
   <body>
-    <div id="root">
-      <div style="padding: 24px; font-family: ui-sans-serif, system-ui, sans-serif; color: #334155;">
-        Loading configurator...
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-title">Pipeline Sample Configurator</span>
+        <span class="brand-subtitle">Configure samples, export runnable bundles, and monitor runs.</span>
       </div>
-    </div>
+      <nav class="tabs" role="tablist" aria-label="Page sections">
+        <button class="tab-button" type="button" role="tab" aria-selected="true" aria-controls="configurator-panel" data-tab-target="configurator-panel">Configurator</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="github-panel" data-tab-target="github-panel">GitHub & Install</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="usage-panel" data-tab-target="usage-panel">How To Use</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="configurator-panel" class="tab-panel" role="tabpanel">
+        <div id="root">
+          <div style="padding: 24px; color: #334155;">
+            Loading configurator...
+          </div>
+        </div>
+      </section>
+
+      <section id="github-panel" class="tab-panel" role="tabpanel" hidden>
+        <div class="docs-page">
+          <h1>GitHub And Requirements</h1>
+          <p>
+            The exported ZIP runs the Pinello Lab CRISPR pipeline and includes this configurator's Textual runner.
+            Keep the pipeline repository and runner dependencies available before launching samples.
+          </p>
+
+          <div class="docs-grid">
+            <article class="doc-card">
+              <h2>Pipeline Repository</h2>
+              <p>Open the source repository or documentation when you need pipeline-level parameters, examples, or troubleshooting notes.</p>
+              <p>
+                <a href="https://github.com/pinellolab/CRISPR_Pipeline" target="_blank" rel="noreferrer">Open GitHub repository</a><br />
+                <a href="https://pinellolab.github.io/CRISPR_Pipeline/" target="_blank" rel="noreferrer">Open pipeline documentation</a>
+              </p>
+            </article>
+
+            <article class="doc-card">
+              <h2>Runner Requirements</h2>
+              <p>Install the Textual dependency once inside the unzipped run bundle, then launch the runner.</p>
+              <pre class="code-block"><code>python3 -m pip install -r requirements.txt
+./run_all.sh</code></pre>
+            </article>
+
+            <article class="doc-card">
+              <h2>Pipeline Runtime</h2>
+              <p>The pipeline itself requires Nextflow and a container runtime such as Singularity. For Google runs, set the configured Google service account path and Tower token.</p>
+              <pre class="code-block"><code>conda install bioconda::nextflow
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/pipeline-service-key.json
+export TOWER_ACCESS_TOKEN=your_token_here</code></pre>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="usage-panel" class="tab-panel" role="tabpanel" hidden>
+        <div class="docs-page">
+          <h1>How To Use The Configurator</h1>
+          <div class="docs-grid">
+            <article class="doc-card">
+              <h2>1. Configure</h2>
+              <p>Upload a base `nextflow.config`, set the output directory, credentials path, repository branch, and one row per sample. Use forced columns when samples should share the same parameter value.</p>
+            </article>
+
+            <article class="doc-card">
+              <h2>2. Choose Capture Method</h2>
+              <p>`GUIDE_ASSIGNMENT_capture_method` now uses the documented pipeline options: `crop-seq` and `direct-capture`. This value is especially relevant when `GUIDE_ASSIGNMENT_method` is `cleanser`.</p>
+            </article>
+
+            <article class="doc-card">
+              <h2>3. Export And Run</h2>
+              <p>Click Export Run, unzip the bundle, install requirements, and launch the Textual runner.</p>
+              <pre class="code-block"><code>unzip pipeline_run_*.zip
+cd pipeline_run_*
+python3 -m pip install -r requirements.txt
+./run_all.sh</code></pre>
+            </article>
+
+            <article class="doc-card">
+              <h2>4. Resume Or Inspect</h2>
+              <p>The runner stores durable status in `runner_state.json` and archived logs in `logs/&lt;sample&gt;/`, so you can close and reopen the interface without losing run state.</p>
+              <pre class="code-block"><code>python3 pipeline_runner.py --status
+python3 pipeline_runner.py --tail Sample_1
+python3 pipeline_runner.py --resume Sample_1</code></pre>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
 
     <script type="module">
       import React from "https://esm.sh/react@18.3.1";
@@ -51,6 +261,18 @@
       ];
 
       const root = createRoot(document.getElementById("root"));
+
+      document.querySelectorAll("[data-tab-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const targetId = button.getAttribute("data-tab-target");
+          document.querySelectorAll("[data-tab-target]").forEach((tab) => {
+            tab.setAttribute("aria-selected", String(tab === button));
+          });
+          document.querySelectorAll(".tab-panel").forEach((panel) => {
+            panel.hidden = panel.id !== targetId;
+          });
+        });
+      });
 
       function showError(error) {
         console.error(error);
