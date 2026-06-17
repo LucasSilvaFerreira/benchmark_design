@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pipeline Sample Configurator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div style="padding: 24px; font-family: ui-sans-serif, system-ui, sans-serif; color: #334155;">
+        Loading configurator...
+      </div>
+    </div>
+
+    <script type="module">
+      import React from "https://esm.sh/react@18.3.1";
+      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+      import * as LucideIcons from "https://esm.sh/lucide-react@0.468.0?deps=react@18.3.1";
+
+      const iconNames = [
+        "Download",
+        "Plus",
+        "Trash2",
+        "Upload",
+        "Link",
+        "Link2Off",
+        "FileType",
+        "Check",
+        "AlignLeft",
+        "Info",
+        "Terminal",
+        "FolderOpen",
+        "Save",
+        "Github",
+        "KeyRound",
+        "Shield"
+      ];
+
+      const root = createRoot(document.getElementById("root"));
+
+      function showError(error) {
+        console.error(error);
+        root.render(
+          React.createElement(
+            "div",
+            {
+              style: {
+                padding: "24px",
+                fontFamily: "ui-sans-serif, system-ui, sans-serif",
+                color: "#991b1b"
+              }
+            },
+            React.createElement("h1", { style: { fontSize: "20px", fontWeight: 700 } }, "Configurator failed to load"),
+            React.createElement(
+              "p",
+              null,
+              "Serve this directory through GitHub Pages or a local HTTP server so index.html can fetch the TSX source file."
+            ),
+            React.createElement("pre", null, String(error && error.message ? error.message : error))
+          )
+        );
+      }
+
+      async function loadConfigurator() {
+        const sourcePath = "./" + encodeURI("pipeline_configurator (1).tsx");
+        const response = await fetch(sourcePath, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Could not fetch ${sourcePath}: ${response.status} ${response.statusText}`);
+        }
+
+        let source = await response.text();
+        source = source.replace(/import React,\s*\{[^;]+?\}\s*from ['"]react['"];\s*/, "");
+        source = source.replace(/import\s*\{[\s\S]*?\}\s*from ['"]lucide-react['"];\s*/, "");
+        source = source.replace(/export default function App\s*\(/, "function App(");
+
+        const transformed = Babel.transform(source, {
+          filename: "pipeline_configurator.jsx",
+          presets: [["react", { runtime: "classic" }]]
+        }).code;
+
+        const iconPrelude = `const { ${iconNames.join(", ")} } = LucideIcons; const { useState, useMemo, useRef } = React;`;
+        const App = new Function("React", "LucideIcons", `${iconPrelude}\n${transformed}\nreturn App;`)(
+          React,
+          LucideIcons
+        );
+
+        root.render(React.createElement(App));
+      }
+
+      loadConfigurator().catch(showError);
+    </script>
+  </body>
+</html>
