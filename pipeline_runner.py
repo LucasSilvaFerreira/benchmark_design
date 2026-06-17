@@ -128,10 +128,10 @@ def infer_finished_status(log_path: Path, return_code: int | None = None) -> str
     if return_code not in (None, 0):
         return "failed"
     text = tail_text(log_path, lines=240).lower()
+    if any(marker in text for marker in ("error ~", "execution aborted", "command error", "pipeline failed", "failed")):
+        return "failed"
     if any(marker in text for marker in ("completed successfully", "execution complete", "pipeline completed")):
         return "completed"
-    if any(marker in text for marker in ("error ~", "execution aborted", "command error", "failed")):
-        return "failed"
     return "finished"
 
 
@@ -281,12 +281,25 @@ class RunnerManager:
                 entry.setdefault("started_at", now_iso())
                 if legacy_log.exists() and not entry.get("last_log"):
                     entry["last_log"] = str(legacy_log.relative_to(self.root))
+            elif legacy_log.exists():
+                entry["status"] = infer_finished_status(legacy_log)
+                entry["pid"] = None
+                if not entry.get("finished_at"):
+                    entry["finished_at"] = now_iso()
+                if not entry.get("last_log"):
+                    entry["last_log"] = str(legacy_log.relative_to(self.root))
             elif entry.get("status") == "running":
                 entry["status"] = infer_finished_status(self._last_log_path(entry))
                 entry["pid"] = None
         elif entry.get("status") == "running":
             entry["status"] = infer_finished_status(self._last_log_path(entry))
             entry["pid"] = None
+        elif legacy_log.exists() and entry.get("status") == "not_started":
+            entry["status"] = infer_finished_status(legacy_log)
+            if not entry.get("finished_at"):
+                entry["finished_at"] = now_iso()
+            if not entry.get("last_log"):
+                entry["last_log"] = str(legacy_log.relative_to(self.root))
 
     def _last_log_path(self, entry: dict[str, Any]) -> Path:
         if entry.get("last_log"):
@@ -516,6 +529,11 @@ class RunnerManager:
     def logs_for_sample(self, sample_name: str) -> list[Path]:
         self.sample_by_name(sample_name)
         paths = []
+        last_log = self.status_for(sample_name).get("last_log")
+        if last_log:
+            path = self.root / last_log
+            if path.exists():
+                paths.append(path)
         for run in self.status_for(sample_name).get("runs", []):
             if run.get("log"):
                 path = self.root / run["log"]
