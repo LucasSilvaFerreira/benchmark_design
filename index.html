@@ -211,12 +211,7 @@ export TOWER_ACCESS_TOKEN=your_token_here</code></pre>
             </article>
 
             <article class="doc-card">
-              <h2>2. Choose Capture Method</h2>
-              <p>`GUIDE_ASSIGNMENT_capture_method` now uses the documented pipeline options: `crop-seq` and `direct-capture`. This value is especially relevant when `GUIDE_ASSIGNMENT_method` is `cleanser`.</p>
-            </article>
-
-            <article class="doc-card">
-              <h2>3. Export And Run</h2>
+              <h2>2. Export And Run</h2>
               <p>Click Export Run, unzip the bundle, install requirements, and launch the Textual runner.</p>
               <pre class="code-block"><code>unzip pipeline_run_*.zip
 cd pipeline_run_*
@@ -225,7 +220,7 @@ python3 -m pip install -r requirements.txt
             </article>
 
             <article class="doc-card">
-              <h2>4. Resume Or Inspect</h2>
+              <h2>3. Resume Or Inspect</h2>
               <p>The runner stores durable status in `runner_state.json` and archived logs in `logs/&lt;sample&gt;/`, so you can close and reopen the interface without losing run state.</p>
               <pre class="code-block"><code>python3 pipeline_runner.py --status
 python3 pipeline_runner.py --tail Sample_1

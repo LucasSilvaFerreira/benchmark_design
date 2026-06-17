@@ -64,7 +64,7 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
     tmp.replace(path)
 
@@ -544,7 +544,8 @@ class RunnerManager:
             for path in log_dir.glob("*.log"):
                 if path not in paths:
                     paths.append(path)
-        return sorted(paths, key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
+        unique_paths = list(dict.fromkeys(paths))
+        return sorted(unique_paths, key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
 
     def latest_log_tail(self, sample_name: str, lines: int = 160) -> str:
         logs = self.logs_for_sample(sample_name)
@@ -583,6 +584,7 @@ def print_status(manager: RunnerManager) -> None:
 
 def run_tui(manager: RunnerManager) -> None:
     try:
+        from rich.text import Text
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
         from textual.widgets import Button, DataTable, Footer, Header, Static
@@ -704,7 +706,8 @@ def run_tui(manager: RunnerManager) -> None:
                 f"Recent logs:\n{log_names}"
             )
             self.query_one("#details", Static).update(details)
-            self.query_one("#log", Static).update(self.runner.latest_log_tail(self.selected_sample, lines=120))
+            log_tail = self.runner.latest_log_tail(self.selected_sample, lines=120)
+            self.query_one("#log", Static).update(Text.from_ansi(log_tail))
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             self.selected_sample = str(event.row_key.value)
