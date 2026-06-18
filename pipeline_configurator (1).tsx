@@ -166,6 +166,7 @@ const resourceFieldGroups = [
 const resourceFields = resourceFieldGroups.reduce((fields, group) => fields.concat(group.fields), []);
 const resourceFieldKeys = new Set(resourceFields.map(field => field.key));
 const RESOURCE_PROFILE_KEY = '__resource_profile';
+const DEFAULT_RESOURCE_PROFILE_KEY = 'default-from-config';
 
 const resourceProfiles = [
   {
@@ -887,8 +888,50 @@ export default function App() {
     }
   };
 
+  const applyDefaultResourceProfile = (sampleId) => {
+    const confirmed = window.confirm(
+      `Apply resource profile "Default from config"?\n\nComputational Resource parameters for ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'every synced sample' : 'this sample'} will be restored from parsed config defaults.`
+    );
+    if (!confirmed) return;
+
+    if (forcedColumns[RESOURCE_PROFILE_KEY]) {
+      setSamples(samples.map(s => ({
+        ...s,
+        resourceProfile: DEFAULT_RESOURCE_PROFILE_KEY,
+        resourceSettings: normalizeResourceSettings(s.resourceDefaults || configResourceDefaults)
+      })));
+      return;
+    }
+
+    const targetSample = samples.find(s => s.id === sampleId);
+    const targetDefaults = normalizeResourceSettings(targetSample?.resourceDefaults || configResourceDefaults);
+    setSamples(samples.map(s => {
+      if (s.id === sampleId) {
+        return {
+          ...s,
+          resourceProfile: DEFAULT_RESOURCE_PROFILE_KEY,
+          resourceSettings: targetDefaults
+        };
+      }
+      const syncedSettings = resourceFields.reduce((settings, field) => {
+        if (forcedColumns[field.key]) {
+          settings[field.key] = targetDefaults[field.key];
+        }
+        return settings;
+      }, { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}) });
+      return {
+        ...s,
+        resourceSettings: syncedSettings
+      };
+    }));
+  };
+
   const applyResourceProfile = (sampleId, profileKey) => {
     if (!profileKey) return;
+    if (profileKey === DEFAULT_RESOURCE_PROFILE_KEY) {
+      applyDefaultResourceProfile(sampleId);
+      return;
+    }
     const profile = resourceProfiles.find(item => item.key === profileKey);
     if (!profile) return;
     const confirmed = window.confirm(
@@ -1996,6 +2039,7 @@ exec python3 pipeline_runner.py "$@"
                           className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'bg-cyan-100 border-cyan-500' : 'bg-white border-cyan-300'}`}
                         >
                           <option value="">Apply profile...</option>
+                          <option value={DEFAULT_RESOURCE_PROFILE_KEY}>Default from config</option>
                           {resourceProfiles.map(profile => (
                             <option key={profile.key} value={profile.key}>{profile.label}</option>
                           ))}
