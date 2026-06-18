@@ -169,6 +169,11 @@ const resourceFields = resourceFieldGroups.reduce((fields, group) => fields.conc
 const resourceFieldKeys = new Set(resourceFields.map(field => field.key));
 const RESOURCE_PROFILE_KEY = '__resource_profile';
 const DEFAULT_RESOURCE_PROFILE_KEY = 'default-from-config';
+const RESOURCE_PROFILE_STORAGE_KEY = 'crispr_resource_profiles';
+const RESOURCE_PROFILE_DB_STORAGE_KEY = 'crispr_resource_profile_db';
+const DEFAULT_SUPABASE_URL = 'https://sibzwlumosfvdidyzngu.supabase.co';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_DG9PRfZZBR0vXJqXqCnk-g_pGudaLIZ';
+const RESOURCE_PROFILE_TABLE = 'resource_profiles';
 
 const resourceProfiles = [
   {
@@ -713,6 +718,66 @@ const withSampleResourceState = (sample, fallbackDefaults) => {
   };
 };
 
+const getStoredJson = (key, fallback) => {
+  try {
+    if (!globalThis.localStorage) return fallback;
+    const raw = globalThis.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const setStoredJson = (key, value) => {
+  try {
+    if (globalThis.localStorage) {
+      globalThis.localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch (error) {
+    console.warn(`Could not persist ${key}`, error);
+  }
+};
+
+const normalizeUserProfile = (profile) => ({
+  id: profile.id || createId(),
+  name: profile.name || 'Untitled profile',
+  createdBy: profile.createdBy || profile.created_by || '',
+  description: profile.description || '',
+  createdAt: profile.createdAt || profile.created_at || new Date().toISOString(),
+  values: normalizeResourceSettings(profile.values || {})
+});
+
+const toSupabaseProfilePayload = (profile) => ({
+  name: profile.name,
+  created_by: profile.createdBy || '',
+  description: profile.description || '',
+  values: normalizeResourceSettings(profile.values || {})
+});
+
+const fromSupabaseProfileRow = (row) => normalizeUserProfile({
+  id: row.id,
+  name: row.name,
+  createdBy: row.created_by,
+  description: row.description,
+  createdAt: row.created_at,
+  values: row.values
+});
+
+const loadStoredResourceProfiles = () => {
+  const stored = getStoredJson(RESOURCE_PROFILE_STORAGE_KEY, []);
+  return Array.isArray(stored) ? stored.map(normalizeUserProfile) : [];
+};
+
+const defaultResourceDbSettings = {
+  supabaseUrl: DEFAULT_SUPABASE_URL,
+  publishableKey: DEFAULT_SUPABASE_PUBLISHABLE_KEY
+};
+
+const loadStoredResourceDbSettings = () => ({
+  ...defaultResourceDbSettings,
+  ...getStoredJson(RESOURCE_PROFILE_DB_STORAGE_KEY, {})
+});
+
 // --- Config File Parser ---
 const parseConfigFile = (content, schema) => {
   const extractedParams = {};
@@ -779,6 +844,18 @@ export default function App() {
   const [mainNfFileName, setMainNfFileName] = useState('');
   const [showResourceSettings, setShowResourceSettings] = useState(false);
   const [configResourceDefaults, setConfigResourceDefaults] = useState(generateDefaultResourceSettings());
+  const [userResourceProfiles, setUserResourceProfiles] = useState(loadStoredResourceProfiles);
+  const [resourceProfileDb, setResourceProfileDb] = useState(loadStoredResourceDbSettings);
+  const [resourceProfileDraft, setResourceProfileDraft] = useState({
+    name: '',
+    createdBy: '',
+    description: '',
+    sampleId: ''
+  });
+  const [resourceDbStatus, setResourceDbStatus] = useState('');
+  const [onlineProfileSampleId, setOnlineProfileSampleId] = useState('');
+
+  const activeOnlineProfileSample = samples.find(sample => sample.id === onlineProfileSampleId);
 
   // --- Handlers ---
   const addSample = () => {
@@ -952,6 +1029,43 @@ export default function App() {
       applyDefaultResourceProfile(sampleId);
       return;
     }
+    const userProfile = userResourceProfiles.find(item => item.id === profileKey);
+    if (userProfile) {
+      const confirmed = window.confirm(
+        `Apply user resource profile "${userProfile.name}"?\n\nAll Computational Resource parameters for ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'every synced sample' : 'this sample'} will be transformed into this profile's values.`
+      );
+      if (!confirmed) return;
+
+      if (forcedColumns[RESOURCE_PROFILE_KEY]) {
+        setSamples(samples.map(s => ({
+          ...s,
+          resourceProfile: userProfile.id,
+          resourceSettings: { ...generateDefaultResourceSettings(), ...userProfile.values }
+        })));
+      } else {
+        setSamples(samples.map(s => {
+          if (s.id === sampleId) {
+            return {
+              ...s,
+              resourceProfile: userProfile.id,
+              resourceSettings: { ...generateDefaultResourceSettings(), ...userProfile.values }
+            };
+          }
+          const syncedSettings = resourceFields.reduce((settings, field) => {
+            if (forcedColumns[field.key]) {
+              settings[field.key] = userProfile.values[field.key];
+            }
+            return settings;
+          }, { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}) });
+          return {
+            ...s,
+            resourceSettings: syncedSettings
+          };
+        }));
+      }
+      return;
+    }
+
     const profile = resourceProfiles.find(item => item.key === profileKey);
     if (!profile) return;
     const confirmed = window.confirm(
@@ -984,6 +1098,167 @@ export default function App() {
             resourceSettings: syncedSettings
           };
         }));
+      }
+    }
+  };
+
+  const openOnlineProfilePanel = (sampleId) => {
+    setOnlineProfileSampleId(sampleId);
+    setResourceProfileDraft(prev => ({ ...prev, sampleId }));
+    setResourceDbStatus('');
+  };
+
+  const closeOnlineProfilePanel = () => {
+    setOnlineProfileSampleId('');
+    setResourceDbStatus('');
+  };
+
+  const applyOnlineProfileToSample = (sampleId, profileId) => {
+    const profile = userResourceProfiles.find(item => item.id === profileId);
+    const sample = samples.find(item => item.id === sampleId);
+    if (!profile || !sample) return;
+    const confirmed = window.confirm(
+      `Apply online resource profile "${profile.name}" to ${sample.name}?\n\nOnly this sample row will be changed.`
+    );
+    if (!confirmed) return;
+    setSamples(samples.map(item => item.id === sampleId ? {
+      ...item,
+      resourceProfile: profile.id,
+      resourceSettings: { ...generateDefaultResourceSettings(), ...profile.values }
+    } : item));
+    setResourceDbStatus(`Applied "${profile.name}" to ${sample.name}.`);
+  };
+
+  const persistUserResourceProfiles = (profiles) => {
+    const normalized = profiles.map(normalizeUserProfile);
+    setUserResourceProfiles(normalized);
+    setStoredJson(RESOURCE_PROFILE_STORAGE_KEY, normalized);
+    return normalized;
+  };
+
+  const updateResourceProfileDb = (patch) => {
+    const nextSettings = { ...resourceProfileDb, ...patch };
+    setResourceProfileDb(nextSettings);
+    setStoredJson(RESOURCE_PROFILE_DB_STORAGE_KEY, nextSettings);
+  };
+
+  const getSupabaseConfig = () => ({
+    supabaseUrl: (resourceProfileDb.supabaseUrl || DEFAULT_SUPABASE_URL).replace(/\/+$/, ''),
+    publishableKey: resourceProfileDb.publishableKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY
+  });
+
+  const supabaseProfileUrl = (query = '') => {
+    const { supabaseUrl } = getSupabaseConfig();
+    return `${supabaseUrl}/rest/v1/${RESOURCE_PROFILE_TABLE}${query}`;
+  };
+
+  const remoteProfileHeaders = (extra = {}) => {
+    const { publishableKey } = getSupabaseConfig();
+    return {
+      apikey: publishableKey,
+      'Content-Type': 'application/json',
+      ...extra
+    };
+  };
+
+  const saveProfileToRemote = async (profile) => {
+    const { supabaseUrl, publishableKey } = getSupabaseConfig();
+    if (!supabaseUrl || !publishableKey) {
+      setResourceDbStatus('Add a Supabase URL and publishable key before saving to the shared library.');
+      return false;
+    }
+    try {
+      const response = await fetch(supabaseProfileUrl(''), {
+        method: 'POST',
+        headers: remoteProfileHeaders({ Prefer: 'return=representation' }),
+        body: JSON.stringify(toSupabaseProfilePayload(profile))
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`${response.status} ${response.statusText}${message ? `: ${message}` : ''}`);
+      }
+      const rows = await response.json();
+      const savedProfile = fromSupabaseProfileRow(Array.isArray(rows) ? rows[0] : rows);
+      setResourceDbStatus(`Saved profile "${savedProfile.name}" to Supabase.`);
+      return savedProfile;
+    } catch (error) {
+      setResourceDbStatus(`Supabase save failed: ${error.message || error}`);
+      return false;
+    }
+  };
+
+  const loadProfilesFromRemote = async () => {
+    const { supabaseUrl, publishableKey } = getSupabaseConfig();
+    if (!supabaseUrl || !publishableKey) {
+      setResourceDbStatus('Add a Supabase URL and publishable key before loading.');
+      return;
+    }
+    try {
+      const response = await fetch(supabaseProfileUrl('?select=id,name,created_by,description,values,created_at&order=created_at.desc'), {
+        headers: remoteProfileHeaders()
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(`${response.status} ${response.statusText}${message ? `: ${message}` : ''}`);
+      }
+      const rows = await response.json();
+      const normalized = persistUserResourceProfiles((Array.isArray(rows) ? rows : []).map(fromSupabaseProfileRow));
+      setResourceDbStatus(`Loaded ${normalized.length} shared profile${normalized.length === 1 ? '' : 's'} from Supabase.`);
+    } catch (error) {
+      setResourceDbStatus(`Supabase load failed: ${error.message || error}`);
+    }
+  };
+
+  const saveCurrentSampleResourceProfile = async () => {
+    const sampleId = resourceProfileDraft.sampleId || samples[0]?.id;
+    const sample = samples.find(item => item.id === sampleId);
+    if (!sample) {
+      setResourceDbStatus('Select a sample before saving a profile.');
+      return;
+    }
+    const name = resourceProfileDraft.name.trim();
+    if (!name) {
+      setResourceDbStatus('Profile name is required.');
+      return;
+    }
+    const localProfile = normalizeUserProfile({
+      name,
+      createdBy: resourceProfileDraft.createdBy.trim(),
+      description: resourceProfileDraft.description.trim(),
+      values: sample.resourceSettings || generateDefaultResourceSettings()
+    });
+    setResourceProfileDraft({ name: '', createdBy: resourceProfileDraft.createdBy, description: '', sampleId });
+    const remoteProfile = await saveProfileToRemote(localProfile);
+    const nextProfile = remoteProfile || localProfile;
+    persistUserResourceProfiles([nextProfile, ...userResourceProfiles.filter(profile => profile.id !== nextProfile.id)]);
+    if (!remoteProfile) {
+      setResourceDbStatus(`Saved profile "${nextProfile.name}" locally only.`);
+    }
+  };
+
+  const deleteUserResourceProfile = async (profileId) => {
+    const profile = userResourceProfiles.find(item => item.id === profileId);
+    if (!profile) return;
+    const confirmed = window.confirm(`Delete user resource profile "${profile.name}"?`);
+    if (!confirmed) return;
+    const nextProfiles = persistUserResourceProfiles(userResourceProfiles.filter(item => item.id !== profileId));
+    setSamples(samples.map(sample => sample.resourceProfile === profileId ? { ...sample, resourceProfile: '' } : sample));
+    setResourceDbStatus(`Deleted profile "${profile.name}" locally.`);
+    const { supabaseUrl, publishableKey } = getSupabaseConfig();
+    if (supabaseUrl && publishableKey) {
+      try {
+        const response = await fetch(supabaseProfileUrl(`?id=eq.${encodeURIComponent(profileId)}`), {
+          method: 'DELETE',
+          headers: remoteProfileHeaders()
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(`${response.status} ${response.statusText}${message ? `: ${message}` : ''}`);
+        }
+        setResourceDbStatus(`Deleted profile "${profile.name}" from Supabase.`);
+      } catch (error) {
+        persistUserResourceProfiles(nextProfiles);
+        setResourceDbStatus(`Deleted locally, but Supabase delete failed: ${error.message || error}`);
       }
     }
   };
@@ -2072,6 +2347,14 @@ exec python3 pipeline_runner.py "$@"
                           <RotateCcw size={13} />
                           Reset defaults
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => openOnlineProfilePanel(sample.id)}
+                          className="inline-flex items-center justify-center gap-1.5 border border-cyan-700 text-white bg-cyan-700 hover:bg-cyan-800 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors"
+                        >
+                          <Save size={13} />
+                          Online profiles
+                        </button>
                       </div>
                     </td>
                   )}
@@ -2092,6 +2375,144 @@ exec python3 pipeline_runner.py "$@"
           </table>
         </div>
       </div>
+
+      {activeOnlineProfileSample && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4 py-6">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-auto rounded-xl bg-white shadow-2xl border border-cyan-200">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-cyan-200 bg-cyan-50 px-5 py-4">
+              <div>
+                <h3 className="text-base font-bold text-cyan-950">Online Resource Profiles</h3>
+                <p className="text-xs text-cyan-700 mt-1">
+                  Current row: <span className="font-semibold">{activeOnlineProfileSample.name}</span>. Online profile actions only change this sample row.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeOnlineProfilePanel}
+                className="rounded-md border border-cyan-300 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-800 hover:bg-cyan-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-5">
+              <div className="rounded-lg border border-cyan-200 bg-white p-4">
+                <h4 className="text-sm font-bold text-cyan-950 mb-3">Connection</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  <input
+                    type="text"
+                    value={resourceProfileDb.supabaseUrl || DEFAULT_SUPABASE_URL}
+                    onChange={(event) => updateResourceProfileDb({ supabaseUrl: event.target.value.trim() })}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                    placeholder="Supabase project URL"
+                  />
+                  <input
+                    type="password"
+                    value={resourceProfileDb.publishableKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY}
+                    onChange={(event) => updateResourceProfileDb({ publishableKey: event.target.value.trim() })}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                    placeholder="Supabase publishable key"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={loadProfilesFromRemote}
+                      className="flex-1 border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 px-3 py-2 rounded-md text-xs font-semibold"
+                    >
+                      Load shared profiles
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateResourceProfileDb(defaultResourceDbSettings)}
+                      className="border border-cyan-300 text-cyan-800 bg-white hover:bg-cyan-50 px-3 py-2 rounded-md text-xs font-semibold"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-cyan-700 leading-relaxed">
+                    No online profiles are loaded until this button is used. The page stores connection fields only in this browser.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-cyan-200 bg-white p-4">
+                <h4 className="text-sm font-bold text-cyan-950 mb-3">Save This Row Online</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  <input
+                    type="text"
+                    value={resourceProfileDraft.name}
+                    onChange={(event) => setResourceProfileDraft(prev => ({ ...prev, name: event.target.value, sampleId: activeOnlineProfileSample.id }))}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                    placeholder="Profile name"
+                  />
+                  <input
+                    type="text"
+                    value={resourceProfileDraft.createdBy}
+                    onChange={(event) => setResourceProfileDraft(prev => ({ ...prev, createdBy: event.target.value, sampleId: activeOnlineProfileSample.id }))}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500"
+                    placeholder="Created by"
+                  />
+                  <textarea
+                    value={resourceProfileDraft.description}
+                    onChange={(event) => setResourceProfileDraft(prev => ({ ...prev, description: event.target.value, sampleId: activeOnlineProfileSample.id }))}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 min-h-[88px]"
+                    placeholder="Description"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveCurrentSampleResourceProfile}
+                    className="border border-cyan-700 text-white bg-cyan-700 hover:bg-cyan-800 px-3 py-2 rounded-md text-sm font-semibold"
+                  >
+                    Save this row online
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-cyan-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h4 className="text-sm font-bold text-cyan-950">Loaded Online Profiles</h4>
+                  <span className="text-xs font-semibold text-cyan-700">{userResourceProfiles.length}</span>
+                </div>
+                <div className="max-h-80 overflow-auto space-y-2">
+                  {userResourceProfiles.length === 0 ? (
+                    <p className="text-xs text-cyan-700">No profiles loaded. Use Load shared profiles when you want to fetch them.</p>
+                  ) : userResourceProfiles.map(profile => (
+                    <div key={profile.id} className="border border-cyan-100 rounded-md p-3 bg-cyan-50/50">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-sm text-cyan-950 truncate">{profile.name}</div>
+                          <div className="text-[11px] text-cyan-700 truncate">{profile.createdBy ? `Created by ${profile.createdBy}` : 'Creator not set'}</div>
+                          {profile.description && (
+                            <div className="text-xs text-slate-600 mt-1 whitespace-normal leading-snug">{profile.description}</div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => applyOnlineProfileToSample(activeOnlineProfileSample.id, profile.id)}
+                            className="mt-2 inline-flex items-center justify-center border border-cyan-300 text-cyan-800 bg-white hover:bg-cyan-100 px-2.5 py-1 rounded-md text-xs font-semibold"
+                          >
+                            Apply to this row
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteUserResourceProfile(profile.id)}
+                          className="text-slate-400 hover:text-red-600 transition-colors flex-shrink-0"
+                          title="Delete online profile"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {resourceDbStatus && (
+                  <p className="text-[11px] text-cyan-800 mt-3 leading-relaxed">{resourceDbStatus}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Metro Style Visualization Container */}
       <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-700 p-6 text-white overflow-hidden flex flex-col relative">

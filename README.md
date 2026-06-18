@@ -22,6 +22,47 @@ When a config does not define a resource field, the configurator falls back to t
 
 The per-row resource profile selector provides five presets. `Large scale datasets (> 1M cells and 20k guides)` applies the requested high-end settings, including `pullTimeout = '60m'`, `max_cpus = 12`, `max_memory = 600.GB`, 600 GB MuData/AnnData merge steps, higher mapping and SCEPTRE retry resources, CLEANSER scratch/disk settings, and GPU queue fields for PerTurbo processes.
 
+User-created resource profiles are stored in browser `localStorage` as a fallback and can be saved to a shared Supabase table on request. In the configurator, open `Show Resource Columns`, then use the `Online profiles` button in a sample row's final resource column. The online panel saves, loads, applies, and deletes profiles only when requested, and apply/save actions target the current row.
+
+- Project URL: `https://sibzwlumosfvdidyzngu.supabase.co`
+- Table: `resource_profiles`
+- Client key type: Supabase publishable key
+
+The GitHub Pages app calls the Supabase REST API directly, so it does not need a bundled SDK. A publishable key is intentionally browser-visible; keep secret/service-role keys out of this repository.
+
+To recreate the shared prototype table in another Supabase project, run this SQL in the Supabase SQL editor:
+
+```sql
+create table if not exists public.resource_profiles (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  created_by text,
+  description text,
+  values jsonb not null,
+  created_at timestamptz default now()
+);
+
+alter table public.resource_profiles enable row level security;
+
+create policy "public read resource profiles"
+on public.resource_profiles
+for select
+to anon
+using (true);
+
+create policy "public create resource profiles"
+on public.resource_profiles
+for insert
+to anon
+with check (true);
+
+create policy "public delete resource profiles"
+on public.resource_profiles
+for delete
+to anon
+using (true);
+```
+
 ## Local Preview
 
 Because the page fetches local assets, serve it through a local HTTP server instead of opening the file directly:
