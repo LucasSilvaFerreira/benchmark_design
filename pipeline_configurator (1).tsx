@@ -95,6 +95,8 @@ const defaultResourceSettings = {
   perturbo_trans_queue: ''
 };
 
+const devBranchResourceBaseline = { ...defaultResourceSettings };
+
 const resourceFieldGroups = [
   {
     title: 'Global Limits',
@@ -487,6 +489,24 @@ const findGlobalProcessBlock = (content) => {
   return blocks.find(block => block.includes('withName:') || block.includes('publishDir')) || blocks[blocks.length - 1] || '';
 };
 
+const findTopLevelNamedBlock = (content, name) => {
+  if (!content) return '';
+  const regex = new RegExp(`${name}\\s*\\{`, 'g');
+  let match = null;
+  while ((match = regex.exec(content)) !== null) {
+    let depth = 0;
+    for (let index = 0; index < match.index; index += 1) {
+      if (content[index] === '{') depth += 1;
+      if (content[index] === '}') depth -= 1;
+    }
+    if (depth === 0) {
+      const openBraceIndex = content.indexOf('{', match.index);
+      return extractBalancedBlock(content, openBraceIndex);
+    }
+  }
+  return '';
+};
+
 const findWithNameBlock = (content, selector) => {
   if (!content) return '';
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -513,7 +533,7 @@ const parseResourceConfig = (content) => {
 
   const processBlock = findGlobalProcessBlock(content);
   const defaultProcessBlock = stripWithNameBlocks(processBlock);
-  const singularityBlock = findNamedBlock(content, 'singularity', true);
+  const singularityBlock = findTopLevelNamedBlock(content, 'singularity') || findNamedBlock(content, 'singularity', true);
   const mappingBlock = findWithNameBlock(processBlock, 'mappingGuide|mappingHashing|mappingscRNA');
   const cleanserBlock = findWithNameBlock(processBlock, 'guide_assignment_cleanser');
   const sceptreBlock = findWithNameBlock(processBlock, 'guide_assignment_sceptre|inference_sceptre');
@@ -1602,7 +1622,7 @@ exec python3 pipeline_runner.py "$@"
 
   const formatResourceDefault = (sample, field) => {
     const value = sample.resourceDefaults?.[field.key] ?? configResourceDefaults[field.key];
-    if (!hasResourceValue(value)) return 'Config default: inherited';
+    if (!hasResourceValue(value)) return 'Dev baseline: unset';
     if (field.type === 'boolean') return `Config default: ${value ? 'true' : 'false'}`;
     if (field.suffix) return `Config default: ${value} ${field.suffix}`;
     return `Config default: ${value}`;
