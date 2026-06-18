@@ -12,6 +12,8 @@ python3 -m pip install -r requirements.txt
 
 The runner expects `git`, `nextflow`, and Google/Tower credentials to be available in the shell environment where you launch it. The generated `runner_manifest.json` stores the repository branch, credential paths, sample names, inputs, and output directories from the configurator export.
 
+Computational resource settings selected in the configurator are written into each sample's `nextflow.config` before export. To change CPUs, memory, retries, Singularity timeout, or GPU queues after export, edit the relevant sample `nextflow.config` or regenerate the ZIP from the configurator.
+
 ## Launch The TUI
 
 ```bash

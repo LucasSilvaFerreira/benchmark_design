@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Download, Plus, Trash2, Upload, Link, Link2Off, FileType, Check, AlignLeft, Info, Terminal, FolderOpen, Save, Github, KeyRound, Shield } from 'lucide-react';
+import { Download, Plus, Trash2, Upload, Link, Link2Off, FileType, Check, AlignLeft, Info, Terminal, FolderOpen, Save, Github, KeyRound, Shield, SlidersHorizontal, Cpu, RotateCcw } from 'lucide-react';
 
 // --- Schema Definition ---
 // Priority fields are ordered first.
@@ -62,6 +62,290 @@ const paramSchema = [
   { key: 'DEBUG_VAR', type: 'boolean', default: true }
 ];
 
+const defaultResourceSettings = {
+  singularity_pullTimeout: '',
+  max_cpus: 32,
+  max_memory_gb: 256,
+  default_cpus_start: 16,
+  default_memory_gb: 50,
+  default_maxRetries: '',
+  default_errorStrategy: 'inherit',
+  anndata_cpus: '',
+  anndata_memory_gb: '',
+  anndata_errorStrategy: 'inherit',
+  mapping_cpus_start: 30,
+  mapping_memory_gb: 100,
+  mapping_maxRetries: '',
+  mapping_errorStrategy: 'inherit',
+  cleanser_scratch: true,
+  cleanser_disk: '500 GB',
+  sceptre_cpus_start: 16,
+  sceptre_memory_gb: 200,
+  sceptre_maxRetries: '',
+  sceptre_errorStrategy: 'inherit',
+  sceptre_chunk_cpus: 8,
+  sceptre_chunk_memory_gb: 100,
+  perturbo_cpus: 8,
+  perturbo_memory_gb: 100,
+  perturbo_errorStrategy: 'inherit',
+  perturbo_queue: '',
+  perturbo_trans_cpus: 8,
+  perturbo_trans_memory_gb: 100,
+  perturbo_trans_errorStrategy: 'inherit',
+  perturbo_trans_queue: ''
+};
+
+const resourceFieldGroups = [
+  {
+    title: 'Global Limits',
+    fields: [
+      { key: 'singularity_pullTimeout', label: 'Singularity pullTimeout', type: 'text', placeholder: '60m' },
+      { key: 'max_cpus', label: 'max_cpus', type: 'number', min: 1 },
+      { key: 'max_memory_gb', label: 'max_memory', type: 'number', min: 1, suffix: 'GB' }
+    ]
+  },
+  {
+    title: 'Default Process',
+    fields: [
+      { key: 'default_cpus_start', label: 'Starting CPUs', type: 'number', min: 1 },
+      { key: 'default_memory_gb', label: 'Memory per attempt', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'default_maxRetries', label: 'Max retries', type: 'number', min: 0 },
+      { key: 'default_errorStrategy', label: 'Error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] }
+    ]
+  },
+  {
+    title: 'MuData And AnnData Heavy Steps',
+    fields: [
+      { key: 'anndata_cpus', label: 'CPUs', type: 'number', min: 1 },
+      { key: 'anndata_memory_gb', label: 'Memory', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'anndata_errorStrategy', label: 'Error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] }
+    ]
+  },
+  {
+    title: 'Mapping Steps',
+    fields: [
+      { key: 'mapping_cpus_start', label: 'Starting CPUs', type: 'number', min: 1 },
+      { key: 'mapping_memory_gb', label: 'Memory per attempt', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'mapping_maxRetries', label: 'Max retries', type: 'number', min: 0 },
+      { key: 'mapping_errorStrategy', label: 'Error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] }
+    ]
+  },
+  {
+    title: 'Guide Assignment',
+    fields: [
+      { key: 'cleanser_scratch', label: 'CLEANSER scratch', type: 'boolean' },
+      { key: 'cleanser_disk', label: 'CLEANSER disk', type: 'text', placeholder: '500 GB' },
+      { key: 'sceptre_cpus_start', label: 'SCEPTRE starting CPUs', type: 'number', min: 1 },
+      { key: 'sceptre_memory_gb', label: 'SCEPTRE memory per attempt', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'sceptre_maxRetries', label: 'SCEPTRE max retries', type: 'number', min: 0 },
+      { key: 'sceptre_errorStrategy', label: 'SCEPTRE error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] }
+    ]
+  },
+  {
+    title: 'SCEPTRE Chunking',
+    fields: [
+      { key: 'sceptre_chunk_cpus', label: 'CPUs', type: 'number', min: 1 },
+      { key: 'sceptre_chunk_memory_gb', label: 'Memory', type: 'number', min: 1, suffix: 'GB' }
+    ]
+  },
+  {
+    title: 'PerTurbo GPU Steps',
+    fields: [
+      { key: 'perturbo_cpus', label: 'PerTurbo CPUs', type: 'number', min: 1 },
+      { key: 'perturbo_memory_gb', label: 'PerTurbo memory', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'perturbo_errorStrategy', label: 'PerTurbo error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] },
+      { key: 'perturbo_queue', label: 'PerTurbo GPU queue', type: 'text', placeholder: 'gpu' },
+      { key: 'perturbo_trans_cpus', label: 'PerTurbo trans CPUs', type: 'number', min: 1 },
+      { key: 'perturbo_trans_memory_gb', label: 'PerTurbo trans memory', type: 'number', min: 1, suffix: 'GB' },
+      { key: 'perturbo_trans_errorStrategy', label: 'PerTurbo trans error strategy', type: 'select', options: ['inherit', 'retry', 'terminate'] },
+      { key: 'perturbo_trans_queue', label: 'PerTurbo trans GPU queue', type: 'text', placeholder: 'gpu' }
+    ]
+  }
+];
+
+const resourceProfiles = [
+  {
+    key: 'small-local',
+    label: 'Small local datasets (< 100k cells)',
+    values: {
+      singularity_pullTimeout: '30m',
+      max_cpus: 4,
+      max_memory_gb: 64,
+      default_cpus_start: 2,
+      default_memory_gb: 16,
+      default_maxRetries: 2,
+      default_errorStrategy: 'retry',
+      anndata_cpus: 4,
+      anndata_memory_gb: 64,
+      anndata_errorStrategy: 'terminate',
+      mapping_cpus_start: 4,
+      mapping_memory_gb: 64,
+      mapping_maxRetries: 2,
+      mapping_errorStrategy: 'retry',
+      cleanser_scratch: true,
+      cleanser_disk: '100 GB',
+      sceptre_cpus_start: 4,
+      sceptre_memory_gb: 64,
+      sceptre_maxRetries: 2,
+      sceptre_errorStrategy: 'retry',
+      sceptre_chunk_cpus: 4,
+      sceptre_chunk_memory_gb: 32,
+      perturbo_cpus: 4,
+      perturbo_memory_gb: 64,
+      perturbo_errorStrategy: 'terminate',
+      perturbo_queue: 'gpu',
+      perturbo_trans_cpus: 4,
+      perturbo_trans_memory_gb: 64,
+      perturbo_trans_errorStrategy: 'terminate',
+      perturbo_trans_queue: 'gpu'
+    }
+  },
+  {
+    key: 'standard',
+    label: 'Standard datasets (100k-500k cells)',
+    values: {
+      singularity_pullTimeout: '45m',
+      max_cpus: 8,
+      max_memory_gb: 128,
+      default_cpus_start: 4,
+      default_memory_gb: 50,
+      default_maxRetries: 3,
+      default_errorStrategy: 'retry',
+      anndata_cpus: 8,
+      anndata_memory_gb: 128,
+      anndata_errorStrategy: 'terminate',
+      mapping_cpus_start: 8,
+      mapping_memory_gb: 100,
+      mapping_maxRetries: 3,
+      mapping_errorStrategy: 'retry',
+      cleanser_scratch: true,
+      cleanser_disk: '250 GB',
+      sceptre_cpus_start: 6,
+      sceptre_memory_gb: 100,
+      sceptre_maxRetries: 3,
+      sceptre_errorStrategy: 'retry',
+      sceptre_chunk_cpus: 6,
+      sceptre_chunk_memory_gb: 64,
+      perturbo_cpus: 8,
+      perturbo_memory_gb: 128,
+      perturbo_errorStrategy: 'terminate',
+      perturbo_queue: 'gpu',
+      perturbo_trans_cpus: 8,
+      perturbo_trans_memory_gb: 96,
+      perturbo_trans_errorStrategy: 'terminate',
+      perturbo_trans_queue: 'gpu'
+    }
+  },
+  {
+    key: 'expanded',
+    label: 'Expanded datasets (500k-1M cells)',
+    values: {
+      singularity_pullTimeout: '60m',
+      max_cpus: 12,
+      max_memory_gb: 256,
+      default_cpus_start: 4,
+      default_memory_gb: 100,
+      default_maxRetries: 3,
+      default_errorStrategy: 'retry',
+      anndata_cpus: 12,
+      anndata_memory_gb: 256,
+      anndata_errorStrategy: 'terminate',
+      mapping_cpus_start: 12,
+      mapping_memory_gb: 150,
+      mapping_maxRetries: 3,
+      mapping_errorStrategy: 'retry',
+      cleanser_scratch: true,
+      cleanser_disk: '350 GB',
+      sceptre_cpus_start: 6,
+      sceptre_memory_gb: 150,
+      sceptre_maxRetries: 3,
+      sceptre_errorStrategy: 'retry',
+      sceptre_chunk_cpus: 8,
+      sceptre_chunk_memory_gb: 100,
+      perturbo_cpus: 10,
+      perturbo_memory_gb: 180,
+      perturbo_errorStrategy: 'terminate',
+      perturbo_queue: 'gpu',
+      perturbo_trans_cpus: 10,
+      perturbo_trans_memory_gb: 105,
+      perturbo_trans_errorStrategy: 'terminate',
+      perturbo_trans_queue: 'gpu'
+    }
+  },
+  {
+    key: 'high-memory',
+    label: 'High memory datasets',
+    values: {
+      singularity_pullTimeout: '60m',
+      max_cpus: 16,
+      max_memory_gb: 400,
+      default_cpus_start: 4,
+      default_memory_gb: 150,
+      default_maxRetries: 3,
+      default_errorStrategy: 'retry',
+      anndata_cpus: 12,
+      anndata_memory_gb: 400,
+      anndata_errorStrategy: 'terminate',
+      mapping_cpus_start: 12,
+      mapping_memory_gb: 200,
+      mapping_maxRetries: 3,
+      mapping_errorStrategy: 'retry',
+      cleanser_scratch: true,
+      cleanser_disk: '500 GB',
+      sceptre_cpus_start: 8,
+      sceptre_memory_gb: 200,
+      sceptre_maxRetries: 3,
+      sceptre_errorStrategy: 'retry',
+      sceptre_chunk_cpus: 8,
+      sceptre_chunk_memory_gb: 100,
+      perturbo_cpus: 12,
+      perturbo_memory_gb: 200,
+      perturbo_errorStrategy: 'terminate',
+      perturbo_queue: 'gpu',
+      perturbo_trans_cpus: 10,
+      perturbo_trans_memory_gb: 105,
+      perturbo_trans_errorStrategy: 'terminate',
+      perturbo_trans_queue: 'gpu'
+    }
+  },
+  {
+    key: 'large-scale',
+    label: 'Large scale datasets (> 1M cells and 20k guides)',
+    values: {
+      singularity_pullTimeout: '60m',
+      max_cpus: 12,
+      max_memory_gb: 600,
+      default_cpus_start: 4,
+      default_memory_gb: 200,
+      default_maxRetries: 3,
+      default_errorStrategy: 'retry',
+      anndata_cpus: 12,
+      anndata_memory_gb: 600,
+      anndata_errorStrategy: 'terminate',
+      mapping_cpus_start: 12,
+      mapping_memory_gb: 200,
+      mapping_maxRetries: 3,
+      mapping_errorStrategy: 'retry',
+      cleanser_scratch: true,
+      cleanser_disk: '500 GB',
+      sceptre_cpus_start: 6,
+      sceptre_memory_gb: 200,
+      sceptre_maxRetries: 3,
+      sceptre_errorStrategy: 'retry',
+      sceptre_chunk_cpus: 8,
+      sceptre_chunk_memory_gb: 100,
+      perturbo_cpus: 12,
+      perturbo_memory_gb: 200,
+      perturbo_errorStrategy: 'terminate',
+      perturbo_queue: 'gpu',
+      perturbo_trans_cpus: 10,
+      perturbo_trans_memory_gb: 105,
+      perturbo_trans_errorStrategy: 'terminate',
+      perturbo_trans_queue: 'gpu'
+    }
+  }
+];
+
 // Sort schema to ensure priority fields are first
 const sortedSchema = [...paramSchema].sort((a, b) => {
   if (a.priority && !b.priority) return -1;
@@ -76,6 +360,305 @@ const generateDefaultParams = () => {
   });
   return defaults;
 };
+
+const generateDefaultResourceSettings = () => ({ ...defaultResourceSettings });
+
+const hasResourceValue = (value) => value !== undefined && value !== null && value !== '';
+
+const resourceNumber = (value) => {
+  if (!hasResourceValue(value)) return '';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : '';
+};
+
+const parseMemoryGb = (rawValue) => {
+  if (!rawValue) return '';
+  const match = String(rawValue).match(/([0-9]+(?:\.[0-9]+)?)\s*(?:\.?\s*)?(TB|GB|G|MB|M)?/i);
+  if (!match) return '';
+  const amount = Number(match[1]);
+  const unit = (match[2] || 'GB').toUpperCase();
+  if (!Number.isFinite(amount)) return '';
+  if (unit === 'TB') return amount * 1000;
+  if (unit === 'MB' || unit === 'M') return amount / 1000;
+  return amount;
+};
+
+const parseCpuStart = (rawValue) => {
+  if (!rawValue) return '';
+  const match = String(rawValue).match(/Math\.min\(\s*([0-9]+(?:\.[0-9]+)?)/);
+  if (match) return resourceNumber(match[1]);
+  const direct = String(rawValue).match(/([0-9]+(?:\.[0-9]+)?)/);
+  return direct ? resourceNumber(direct[1]) : '';
+};
+
+const parseRetries = (rawValue) => {
+  if (!rawValue) return '';
+  const match = String(rawValue).match(/([0-9]+)/);
+  return match ? resourceNumber(match[1]) : '';
+};
+
+const parseBooleanValue = (rawValue) => {
+  if (!rawValue) return '';
+  const normalized = String(rawValue).trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return '';
+};
+
+const parseQuotedValue = (rawValue) => {
+  if (!rawValue) return '';
+  return String(rawValue).trim().replace(/^['"]/, '').replace(/['"]$/, '');
+};
+
+const findAssignment = (content, key) => {
+  if (!content) return '';
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = content.match(new RegExp(`(?:^|\\n)\\s*(?:params\\.)?${escapedKey}\\s*=\\s*([^\\n]+)`));
+  return match ? match[1].replace(/\/\/.*$/, '').trim() : '';
+};
+
+const extractBalancedBlock = (content, openBraceIndex) => {
+  let depth = 0;
+  for (let index = openBraceIndex; index < content.length; index += 1) {
+    const char = content[index];
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return content.slice(openBraceIndex + 1, index);
+      }
+    }
+  }
+  return '';
+};
+
+const findNamedBlock = (content, name, fromEnd = false) => {
+  if (!content) return '';
+  const regex = new RegExp(`${name}\\s*\\{`, 'g');
+  let match = null;
+  let selected = null;
+  while ((match = regex.exec(content)) !== null) {
+    selected = match;
+    if (!fromEnd) break;
+  }
+  if (!selected) return '';
+  const openBraceIndex = content.indexOf('{', selected.index);
+  return extractBalancedBlock(content, openBraceIndex);
+};
+
+const findNamedBlocks = (content, name) => {
+  if (!content) return [];
+  const regex = new RegExp(`${name}\\s*\\{`, 'g');
+  const blocks = [];
+  let match = null;
+  while ((match = regex.exec(content)) !== null) {
+    const openBraceIndex = content.indexOf('{', match.index);
+    const block = extractBalancedBlock(content, openBraceIndex);
+    if (block) blocks.push(block);
+  }
+  return blocks;
+};
+
+const findGlobalProcessBlock = (content) => {
+  const blocks = findNamedBlocks(content, 'process');
+  return blocks.find(block => block.includes('withName:') || block.includes('publishDir')) || blocks[blocks.length - 1] || '';
+};
+
+const findWithNameBlock = (content, selector) => {
+  if (!content) return '';
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`withName:\\s*['"]${escapedSelector}['"]\\s*\\{`);
+  const match = content.match(regex);
+  if (!match) return '';
+  const openBraceIndex = content.indexOf('{', match.index);
+  return extractBalancedBlock(content, openBraceIndex);
+};
+
+const stripWithNameBlocks = (content) => content.replace(/withName:\s*['"][^'"]+['"]\s*\{[\s\S]*?\n\s*\}/g, '');
+
+const detectErrorStrategy = (block) => {
+  const raw = findAssignment(block, 'errorStrategy');
+  if (!raw) return 'inherit';
+  if (raw.includes('retry')) return 'retry';
+  if (raw.includes('terminate')) return 'terminate';
+  return 'inherit';
+};
+
+const parseResourceConfig = (content) => {
+  const parsed = generateDefaultResourceSettings();
+  if (!content) return parsed;
+
+  const processBlock = findGlobalProcessBlock(content);
+  const defaultProcessBlock = stripWithNameBlocks(processBlock);
+  const singularityBlock = findNamedBlock(content, 'singularity', true);
+  const mappingBlock = findWithNameBlock(processBlock, 'mappingGuide|mappingHashing|mappingscRNA');
+  const cleanserBlock = findWithNameBlock(processBlock, 'guide_assignment_cleanser');
+  const sceptreBlock = findWithNameBlock(processBlock, 'guide_assignment_sceptre|inference_sceptre');
+  const sceptreChunkBlock = findWithNameBlock(processBlock, 'sceptre_chunk_prepare|sceptre_chunk_merge');
+  const perturboCombinedBlock = findWithNameBlock(processBlock, 'inference_perturbo|inference_perturbo_trans');
+  const perturboBlock = findWithNameBlock(processBlock, 'inference_perturbo') || perturboCombinedBlock;
+  const perturboTransBlock = findWithNameBlock(processBlock, 'inference_perturbo_trans') || perturboCombinedBlock;
+  const anndataBlock = findWithNameBlock(processBlock, 'anndata_concat|CreateMuData|mudata_concat|inference_mudata|mergeMudata');
+
+  parsed.max_cpus = resourceNumber(findAssignment(content, 'max_cpus')) || parsed.max_cpus;
+  parsed.max_memory_gb = parseMemoryGb(findAssignment(content, 'max_memory')) || parsed.max_memory_gb;
+  parsed.singularity_pullTimeout = parseQuotedValue(findAssignment(singularityBlock, 'pullTimeout')) || '';
+
+  parsed.default_cpus_start = parseCpuStart(findAssignment(defaultProcessBlock, 'cpus')) || parsed.default_cpus_start;
+  parsed.default_memory_gb = parseMemoryGb(findAssignment(defaultProcessBlock, 'memory')) || parsed.default_memory_gb;
+  parsed.default_maxRetries = parseRetries(findAssignment(defaultProcessBlock, 'maxRetries'));
+  parsed.default_errorStrategy = detectErrorStrategy(defaultProcessBlock);
+
+  parsed.anndata_cpus = parseCpuStart(findAssignment(anndataBlock, 'cpus'));
+  parsed.anndata_memory_gb = parseMemoryGb(findAssignment(anndataBlock, 'memory'));
+  parsed.anndata_errorStrategy = detectErrorStrategy(anndataBlock);
+
+  parsed.mapping_cpus_start = parseCpuStart(findAssignment(mappingBlock, 'cpus')) || parsed.mapping_cpus_start;
+  parsed.mapping_memory_gb = parseMemoryGb(findAssignment(mappingBlock, 'memory')) || parsed.mapping_memory_gb;
+  parsed.mapping_maxRetries = parseRetries(findAssignment(mappingBlock, 'maxRetries'));
+  parsed.mapping_errorStrategy = detectErrorStrategy(mappingBlock);
+
+  const parsedScratch = parseBooleanValue(findAssignment(cleanserBlock, 'scratch'));
+  parsed.cleanser_scratch = parsedScratch === '' ? parsed.cleanser_scratch : parsedScratch;
+  parsed.cleanser_disk = parseQuotedValue(findAssignment(cleanserBlock, 'disk')) || parsed.cleanser_disk;
+
+  parsed.sceptre_cpus_start = parseCpuStart(findAssignment(sceptreBlock, 'cpus')) || parsed.sceptre_cpus_start;
+  parsed.sceptre_memory_gb = parseMemoryGb(findAssignment(sceptreBlock, 'memory')) || parsed.sceptre_memory_gb;
+  parsed.sceptre_maxRetries = parseRetries(findAssignment(sceptreBlock, 'maxRetries'));
+  parsed.sceptre_errorStrategy = detectErrorStrategy(sceptreBlock);
+
+  parsed.sceptre_chunk_cpus = parseCpuStart(findAssignment(sceptreChunkBlock, 'cpus')) || parsed.sceptre_chunk_cpus;
+  parsed.sceptre_chunk_memory_gb = parseMemoryGb(findAssignment(sceptreChunkBlock, 'memory')) || parsed.sceptre_chunk_memory_gb;
+
+  parsed.perturbo_cpus = parseCpuStart(findAssignment(perturboBlock, 'cpus')) || parsed.perturbo_cpus;
+  parsed.perturbo_memory_gb = parseMemoryGb(findAssignment(perturboBlock, 'memory')) || parsed.perturbo_memory_gb;
+  parsed.perturbo_errorStrategy = detectErrorStrategy(perturboBlock);
+  parsed.perturbo_queue = parseQuotedValue(findAssignment(perturboBlock, 'queue')) || '';
+
+  parsed.perturbo_trans_cpus = parseCpuStart(findAssignment(perturboTransBlock, 'cpus')) || parsed.perturbo_trans_cpus;
+  parsed.perturbo_trans_memory_gb = parseMemoryGb(findAssignment(perturboTransBlock, 'memory')) || parsed.perturbo_trans_memory_gb;
+  parsed.perturbo_trans_errorStrategy = detectErrorStrategy(perturboTransBlock);
+  parsed.perturbo_trans_queue = parseQuotedValue(findAssignment(perturboTransBlock, 'queue')) || '';
+
+  return parsed;
+};
+
+const quoteConfigValue = (value) => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+const formatGb = (value) => `${Number(value)}.GB`;
+
+const retryStrategyLine = (retries) => {
+  const retryCount = Number(retries);
+  return Number.isFinite(retryCount) && retryCount > 0
+    ? `errorStrategy = { task.attempt <= ${retryCount} ? 'retry' : 'terminate' }`
+    : "errorStrategy = 'terminate'";
+};
+
+const appendErrorStrategy = (lines, indent, strategy, retries) => {
+  if (strategy === 'terminate') {
+    lines.push(`${indent}errorStrategy = 'terminate'`);
+  } else if (strategy === 'retry') {
+    if (hasResourceValue(retries)) {
+      lines.push(`${indent}maxRetries = ${Number(retries)}`);
+    }
+    lines.push(`${indent}${retryStrategyLine(retries)}`);
+  }
+};
+
+const buildResourceOverrideConfig = (settings) => {
+  const resources = { ...generateDefaultResourceSettings(), ...settings };
+  const lines = [
+    '',
+    '// --- Computational resource overrides injected by Pipeline Configurator ---',
+    'params {'
+  ];
+
+  if (hasResourceValue(resources.max_cpus)) lines.push(`  max_cpus = ${Number(resources.max_cpus)}`);
+  if (hasResourceValue(resources.max_memory_gb)) lines.push(`  max_memory = ${formatGb(resources.max_memory_gb)}`);
+  lines.push('}');
+
+  if (hasResourceValue(resources.singularity_pullTimeout)) {
+    lines.push('');
+    lines.push('singularity {');
+    lines.push(`  pullTimeout = ${quoteConfigValue(resources.singularity_pullTimeout)}`);
+    lines.push('}');
+  }
+
+  lines.push('');
+  lines.push('process {');
+  if (hasResourceValue(resources.default_cpus_start)) {
+    lines.push(`  cpus = { Math.min(${Number(resources.default_cpus_start)} * task.attempt, params.max_cpus) }`);
+  }
+  if (hasResourceValue(resources.default_memory_gb)) {
+    lines.push(`  memory = { [${formatGb(resources.default_memory_gb)} * task.attempt, params.max_memory].min() }`);
+  }
+  appendErrorStrategy(lines, '  ', resources.default_errorStrategy, resources.default_maxRetries);
+
+  if (hasResourceValue(resources.anndata_cpus) || hasResourceValue(resources.anndata_memory_gb) || resources.anndata_errorStrategy !== 'inherit') {
+    lines.push('');
+    lines.push("  withName: 'anndata_concat|CreateMuData|mudata_concat|inference_mudata|mergeMudata' {");
+    if (hasResourceValue(resources.anndata_cpus)) lines.push(`    cpus = { Math.min(${Number(resources.anndata_cpus)}, params.max_cpus) }`);
+    if (hasResourceValue(resources.anndata_memory_gb)) lines.push(`    memory = { [${formatGb(resources.anndata_memory_gb)}, params.max_memory].min() }`);
+    appendErrorStrategy(lines, '    ', resources.anndata_errorStrategy, '');
+    lines.push('  }');
+  }
+
+  lines.push('');
+  lines.push("  withName: 'mappingGuide|mappingHashing|mappingscRNA' {");
+  if (hasResourceValue(resources.mapping_cpus_start)) lines.push(`    cpus = { Math.min(${Number(resources.mapping_cpus_start)} * task.attempt, params.max_cpus) }`);
+  if (hasResourceValue(resources.mapping_memory_gb)) lines.push(`    memory = { [${formatGb(resources.mapping_memory_gb)} * task.attempt, params.max_memory].min() }`);
+  appendErrorStrategy(lines, '    ', resources.mapping_errorStrategy, resources.mapping_maxRetries);
+  lines.push('  }');
+
+  lines.push('');
+  lines.push("  withName: 'guide_assignment_cleanser' {");
+  lines.push(`    scratch = ${resources.cleanser_scratch ? 'true' : 'false'}`);
+  if (hasResourceValue(resources.cleanser_disk)) lines.push(`    disk = ${quoteConfigValue(resources.cleanser_disk)}`);
+  lines.push('  }');
+
+  lines.push('');
+  lines.push("  withName: 'guide_assignment_sceptre|inference_sceptre' {");
+  if (hasResourceValue(resources.sceptre_cpus_start)) lines.push(`    cpus = { Math.min(${Number(resources.sceptre_cpus_start)} * task.attempt, params.max_cpus) }`);
+  if (hasResourceValue(resources.sceptre_memory_gb)) lines.push(`    memory = { [${formatGb(resources.sceptre_memory_gb)} * task.attempt, params.max_memory].min() }`);
+  appendErrorStrategy(lines, '    ', resources.sceptre_errorStrategy, resources.sceptre_maxRetries);
+  lines.push('  }');
+
+  lines.push('');
+  lines.push("  withName: 'sceptre_chunk_prepare|sceptre_chunk_merge' {");
+  if (hasResourceValue(resources.sceptre_chunk_cpus)) lines.push(`    cpus = { Math.min(${Number(resources.sceptre_chunk_cpus)}, params.max_cpus) }`);
+  if (hasResourceValue(resources.sceptre_chunk_memory_gb)) lines.push(`    memory = { [${formatGb(resources.sceptre_chunk_memory_gb)}, params.max_memory].min() }`);
+  lines.push('  }');
+
+  lines.push('');
+  lines.push("  withName: 'inference_perturbo' {");
+  if (hasResourceValue(resources.perturbo_cpus)) lines.push(`    cpus = { Math.min(${Number(resources.perturbo_cpus)}, params.max_cpus) }`);
+  if (hasResourceValue(resources.perturbo_memory_gb)) lines.push(`    memory = { [${formatGb(resources.perturbo_memory_gb)}, params.max_memory].min() }`);
+  appendErrorStrategy(lines, '    ', resources.perturbo_errorStrategy, '');
+  if (hasResourceValue(resources.perturbo_queue)) lines.push(`    queue = ${quoteConfigValue(resources.perturbo_queue)}`);
+  lines.push('  }');
+
+  lines.push('');
+  lines.push("  withName: 'inference_perturbo_trans' {");
+  if (hasResourceValue(resources.perturbo_trans_cpus)) lines.push(`    cpus = { Math.min(${Number(resources.perturbo_trans_cpus)}, params.max_cpus) }`);
+  if (hasResourceValue(resources.perturbo_trans_memory_gb)) lines.push(`    memory = { [${formatGb(resources.perturbo_trans_memory_gb)}, params.max_memory].min() }`);
+  appendErrorStrategy(lines, '    ', resources.perturbo_trans_errorStrategy, '');
+  if (hasResourceValue(resources.perturbo_trans_queue)) lines.push(`    queue = ${quoteConfigValue(resources.perturbo_trans_queue)}`);
+  lines.push('  }');
+
+  lines.push('}');
+  return lines.join('\n');
+};
+
+const normalizeResourceSettings = (settings) => ({ ...generateDefaultResourceSettings(), ...(settings || {}) });
+
+const resourceSettingsSignature = (settings) => JSON.stringify(normalizeResourceSettings(settings));
+
+const hasResourceConfigContent = (content) => (
+  /(?:^|\n)\s*(?:params\.)?max_cpus\s*=/.test(content) ||
+  /(?:^|\n)\s*(?:params\.)?max_memory\s*=/.test(content) ||
+  /(?:^|\n)\s*singularity\s*\{/.test(content) ||
+  /(?:^|\n)\s*process\s*\{/.test(content) ||
+  /withName:\s*['"]/.test(content)
+);
 
 // --- Config File Parser ---
 const parseConfigFile = (content, schema) => {
@@ -140,6 +723,9 @@ export default function App() {
   // File state for main.nf / base config
   const [mainNfContent, setMainNfContent] = useState('');
   const [mainNfFileName, setMainNfFileName] = useState('');
+  const [showResourceSettings, setShowResourceSettings] = useState(false);
+  const [resourceSettings, setResourceSettings] = useState(generateDefaultResourceSettings());
+  const [configResourceDefaults, setConfigResourceDefaults] = useState(generateDefaultResourceSettings());
 
   // --- Handlers ---
   const addSample = () => {
@@ -199,6 +785,43 @@ export default function App() {
     });
   };
 
+  const updateResourceSetting = (key, value) => {
+    setResourceSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const resetResourceSettingsToConfigDefaults = () => {
+    const confirmed = window.confirm(
+      "Reset Computational Resource parameters to the defaults parsed from the uploaded base config?\n\nAll current resource edits will be replaced."
+    );
+    if (confirmed) {
+      setResourceSettings({ ...configResourceDefaults });
+    }
+  };
+
+  const applyResourceProfile = (profileKey) => {
+    if (!profileKey) return;
+    const profile = resourceProfiles.find(item => item.key === profileKey);
+    if (!profile) return;
+    const confirmed = window.confirm(
+      `Apply resource profile "${profile.label}"?\n\nAll Computational Resource parameters will be transformed into this profile's values for every exported sample.`
+    );
+    if (confirmed) {
+      setResourceSettings(prev => ({ ...prev, ...profile.values }));
+    }
+  };
+
+  const offerResourceSettingsFromConfig = (content, label) => {
+    if (!hasResourceConfigContent(content)) return;
+    const parsedResources = parseResourceConfig(content);
+    const confirmed = window.confirm(
+      `Load Computational Resource defaults from ${label}?\n\nThis will update the global resource panel from that config file. Sample table parameters from the config are still loaded separately.`
+    );
+    if (confirmed) {
+      setConfigResourceDefaults(parsedResources);
+      setResourceSettings(parsedResources);
+    }
+  };
+
   const handleFileUpload = (id, event) => {
     const file = event.target.files[0];
     if (file) {
@@ -213,6 +836,7 @@ export default function App() {
       reader.onload = (e) => {
         const content = e.target.result;
         const parsedParams = parseConfigFile(content, paramSchema);
+        offerResourceSettingsFromConfig(content, `sample config "${file.name}"`);
 
         setSamples(prevSamples => prevSamples.map(s => {
           const isTarget = s.id === id;
@@ -249,6 +873,9 @@ export default function App() {
       reader.onload = (e) => {
         const content = e.target.result;
         setMainNfContent(content);
+        const parsedResources = parseResourceConfig(content);
+        setConfigResourceDefaults(parsedResources);
+        setResourceSettings(parsedResources);
         
         // Find parameters in the global config
         const parsedParams = parseConfigFile(content, paramSchema);
@@ -281,7 +908,8 @@ export default function App() {
         googleCreds,
         repoBranch,
         mainNfContent,   // <--- Safely capturing the base config data
-        mainNfFileName   // <--- Safely capturing the base config filename
+        mainNfFileName,  // <--- Safely capturing the base config filename
+        resourceSettings
       },
       forcedColumns,
       samples: samples.map(sample => ({
@@ -315,14 +943,19 @@ export default function App() {
         
         // Handle new full-session format
         if (data.version && data.samples) {
+          const hasSavedResourceSettings = data.globalSettings && data.globalSettings.resourceSettings;
           if (data.globalSettings) {
             setBaseOutputDir(data.globalSettings.baseOutputDir || '');
             setAnalysisName(data.globalSettings.analysisName || '');
             setTowerToken(data.globalSettings.towerToken || '');
             setGoogleCreds(data.globalSettings.googleCreds || './pipeline-service-key.json');
             setRepoBranch(data.globalSettings.repoBranch || 'main');
-            setMainNfContent(data.globalSettings.mainNfContent || '');   // <--- Restoring base config
+            const restoredMainConfig = data.globalSettings.mainNfContent || '';
+            const parsedResources = parseResourceConfig(restoredMainConfig);
+            setMainNfContent(restoredMainConfig);   // <--- Restoring base config
             setMainNfFileName(data.globalSettings.mainNfFileName || ''); // <--- Restoring base filename
+            setConfigResourceDefaults(parsedResources);
+            setResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
           }
           if (data.forcedColumns) {
             setForcedColumns(data.forcedColumns);
@@ -331,6 +964,32 @@ export default function App() {
             ...s,
             file: null // The file handle is null, but the strings/data attached are safe
           }));
+          if (!hasSavedResourceSettings) {
+            const sampleResourceSnapshots = restoredSamples
+              .filter(sample => sample.sampleConfigContent && hasResourceConfigContent(sample.sampleConfigContent))
+              .map(sample => ({
+                sampleName: sample.name,
+                resources: parseResourceConfig(sample.sampleConfigContent)
+              }));
+            if (sampleResourceSnapshots.length > 0) {
+              const firstSnapshot = sampleResourceSnapshots[0];
+              const uniqueResourceSignatures = new Set(
+                sampleResourceSnapshots.map(snapshot => resourceSettingsSignature(snapshot.resources))
+              );
+              if (uniqueResourceSignatures.size === 1) {
+                setConfigResourceDefaults(firstSnapshot.resources);
+                setResourceSettings(firstSnapshot.resources);
+              } else {
+                const confirmed = window.confirm(
+                  `This session contains different Computational Resource settings across stored sample configs.\n\nThe configurator currently exports one global resource configuration for all samples. Apply the resource settings from "${firstSnapshot.sampleName}" to the global panel?`
+                );
+                if (confirmed) {
+                  setConfigResourceDefaults(firstSnapshot.resources);
+                  setResourceSettings(firstSnapshot.resources);
+                }
+              }
+            }
+          }
           setSamples(restoredSamples);
         } 
         // Fallback for older export format (array of objects)
@@ -378,13 +1037,19 @@ export default function App() {
           setTowerToken(data.globalSettings.towerToken || '');
           setGoogleCreds(data.globalSettings.googleCreds || './pipeline-service-key.json');
           setRepoBranch(data.globalSettings.repoBranch || 'main');
-          setMainNfContent(data.globalSettings.mainNfContent || '');
+          const restoredMainConfig = data.globalSettings.mainNfContent || '';
+          const parsedResources = parseResourceConfig(restoredMainConfig);
+          setMainNfContent(restoredMainConfig);
           setMainNfFileName(data.globalSettings.mainNfFileName || '');
+          setConfigResourceDefaults(parsedResources);
+          setResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
         }
         if (data.forcedColumns) {
           setForcedColumns(data.forcedColumns);
         }
         
+        const sampleResourceSnapshots = [];
+
         // Asynchronously process all samples to read their actual config files from the directory
         const restoredSamples = await Promise.all(data.samples.map(async (s) => {
           const safeName = s.name.replace(/\s+/g, '_');
@@ -403,6 +1068,12 @@ export default function App() {
             try {
               const configText = await sampleConfigFile.text();
               const parsedParams = parseConfigFile(configText, paramSchema);
+              if (hasResourceConfigContent(configText)) {
+                sampleResourceSnapshots.push({
+                  sampleName: safeName,
+                  resources: parseResourceConfig(configText)
+                });
+              }
               // Merge/Override with the parameters actually found in the sample's directory config
               finalParams = { ...finalParams, ...parsedParams };
             } catch (err) {
@@ -416,6 +1087,26 @@ export default function App() {
             params: finalParams
           };
         }));
+
+        if (sampleResourceSnapshots.length > 0) {
+          const firstSnapshot = sampleResourceSnapshots[0];
+          const uniqueResourceSignatures = new Set(
+            sampleResourceSnapshots.map(snapshot => resourceSettingsSignature(snapshot.resources))
+          );
+
+          if (uniqueResourceSignatures.size === 1) {
+            setConfigResourceDefaults(firstSnapshot.resources);
+            setResourceSettings(firstSnapshot.resources);
+          } else {
+            const confirmed = window.confirm(
+              `The loaded directory has different Computational Resource settings across sample nextflow.config files.\n\nThe configurator currently exports one global resource configuration for all samples. Apply the resource settings from "${firstSnapshot.sampleName}" to the global panel?`
+            );
+            if (confirmed) {
+              setConfigResourceDefaults(firstSnapshot.resources);
+              setResourceSettings(firstSnapshot.resources);
+            }
+          }
+        }
 
         setSamples(restoredSamples);
       } else {
@@ -451,7 +1142,8 @@ export default function App() {
         googleCreds,
         repoBranch,
         mainNfContent,
-        mainNfFileName
+        mainNfFileName,
+        resourceSettings
       },
       forcedColumns,
       samples: samples.map(sample => ({
@@ -569,6 +1261,8 @@ export default function App() {
         });
         nfConfigContent += '}\n';
       }
+
+      nfConfigContent += buildResourceOverrideConfig(resourceSettings);
 
       // Save the final substituted parameters as a single nextflow.config inside the folder
       folder.file('nextflow.config', nfConfigContent);
@@ -744,6 +1438,73 @@ exec python3 pipeline_runner.py "$@"
     );
   };
 
+  const formatResourceDefault = (field) => {
+    const value = configResourceDefaults[field.key];
+    if (!hasResourceValue(value)) return 'Config default: inherited';
+    if (field.type === 'boolean') return `Config default: ${value ? 'true' : 'false'}`;
+    if (field.suffix) return `Config default: ${value} ${field.suffix}`;
+    return `Config default: ${value}`;
+  };
+
+  const renderResourceInput = (field) => {
+    const rawValue = resourceSettings[field.key];
+    const value = rawValue !== undefined ? rawValue : '';
+    const inputClasses = "w-full text-sm border border-cyan-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 bg-white px-3 py-2 text-slate-800";
+
+    if (field.type === 'boolean') {
+      return (
+        <label className="flex items-center gap-2 text-sm font-medium text-cyan-950 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => updateResourceSetting(field.key, event.target.checked)}
+            className="h-4 w-4 rounded border-cyan-300 text-cyan-600 focus:ring-cyan-500"
+          />
+          Enabled
+        </label>
+      );
+    }
+
+    if (field.type === 'select') {
+      return (
+        <select
+          value={value || 'inherit'}
+          onChange={(event) => updateResourceSetting(field.key, event.target.value)}
+          className={inputClasses}
+        >
+          {field.options.map(option => (
+            <option key={option} value={option}>
+              {option === 'inherit' ? 'inherit from config' : option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    return (
+      <div className="relative">
+        <input
+          type={field.type === 'number' ? 'number' : 'text'}
+          value={value}
+          onChange={(event) => updateResourceSetting(
+            field.key,
+            field.type === 'number'
+              ? (event.target.value === '' ? '' : Number(event.target.value))
+              : event.target.value
+          )}
+          className={`${inputClasses} ${field.suffix ? 'pr-12' : ''}`}
+          placeholder={field.placeholder || ''}
+          min={field.min}
+        />
+        {field.suffix && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-cyan-700">
+            {field.suffix}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800 flex flex-col">
       
@@ -904,6 +1665,85 @@ exec python3 pipeline_runner.py "$@"
               placeholder="./pipeline-service-key.json"
             />
           </div>
+        </div>
+
+        {/* Row 3: Computational Resource Parameters */}
+        <div className="pt-4 border-t border-cyan-100">
+          <button
+            type="button"
+            onClick={() => setShowResourceSettings(!showResourceSettings)}
+            className="w-full flex items-center justify-between gap-4 rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-left hover:bg-cyan-100 transition-colors"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-cyan-600 text-white">
+                <SlidersHorizontal size={18} />
+              </span>
+              <span>
+                <span className="block text-sm font-bold text-cyan-950">Computational Resource Parameters</span>
+                <span className="block text-xs text-cyan-700">Global Nextflow process resources, retries, Singularity timeout, and GPU queues.</span>
+              </span>
+            </span>
+            <span className="text-xs font-semibold text-cyan-800 bg-white border border-cyan-200 rounded-full px-3 py-1">
+              {showResourceSettings ? 'Hide' : 'Show'}
+            </span>
+          </button>
+
+          {showResourceSettings && (
+            <div className="mt-4 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {resourceFieldGroups.map(group => (
+                  <div key={group.title} className="rounded-lg border border-cyan-200 bg-white p-4 shadow-sm">
+                    <h3 className="text-sm font-bold text-cyan-950 flex items-center gap-2 mb-3">
+                      <Cpu size={15} className="text-cyan-600" />
+                      {group.title}
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {group.fields.map(field => (
+                        <div key={field.key}>
+                          <label className="block text-xs font-semibold text-cyan-900 mb-1">
+                            {field.label}
+                          </label>
+                          {renderResourceInput(field)}
+                          <div className="mt-1 text-[10px] font-medium text-cyan-700">
+                            {formatResourceDefault(field)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-lg border border-cyan-300 bg-white p-4 flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-cyan-900 mb-2">
+                    Resource Profile
+                  </label>
+                  <select
+                    value=""
+                    onChange={(event) => applyResourceProfile(event.target.value)}
+                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 bg-white"
+                  >
+                    <option value="">Apply a resource profile...</option>
+                    {resourceProfiles.map(profile => (
+                      <option key={profile.key} value={profile.key}>{profile.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-cyan-700 mt-2">
+                    Applying a profile replaces all resource fields after confirmation. The large-scale profile uses the requested high-end values.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetResourceSettingsToConfigDefaults}
+                  className="inline-flex items-center justify-center gap-2 border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 px-4 py-2 rounded-md text-sm font-semibold transition-colors"
+                >
+                  <RotateCcw size={16} />
+                  Reset To Config Defaults
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         
       </div>

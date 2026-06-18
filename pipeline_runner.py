@@ -654,6 +654,8 @@ def run_tui(manager: RunnerManager) -> None:
             self.runner = runner
             self.selected_sample = runner.samples[0].name if runner.samples else ""
             self.message = "Select a sample and use the buttons or keyboard shortcuts."
+            self._refreshing_table = False
+            self._ignore_table_events_until = 0.0
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
@@ -682,15 +684,46 @@ def run_tui(manager: RunnerManager) -> None:
         def refresh_all(self) -> None:
             self.runner.refresh_state(save=True)
             table = self.query_one("#table", DataTable)
+            selected_before_refresh = self.selected_sample
+            rows = self.runner.rows()
+            self._ignore_table_events_until = time.monotonic() + 0.2
             table.clear(columns=False)
             status_counts: dict[str, int] = {}
-            for row in self.runner.rows():
+            selected_row = 0
+            sample_names: list[str] = []
+            self._refreshing_table = True
+            for index, row in enumerate(rows):
                 sample, status, pid, mode, started, finished, _log = row
+                sample_names.append(sample)
+                if sample == selected_before_refresh:
+                    selected_row = index
                 status_counts[status] = status_counts.get(status, 0) + 1
                 table.add_row(sample, status.upper(), pid, mode, started, finished, key=sample)
+            if rows:
+                if selected_before_refresh in sample_names:
+                    self.selected_sample = selected_before_refresh
+                else:
+                    self.selected_sample = sample_names[0]
+                    selected_row = 0
+                self._restore_table_cursor(table, selected_row)
+            self._refreshing_table = False
             summary = "  ".join(f"{status}: {count}" for status, count in sorted(status_counts.items()))
             self.query_one("#summary", Static).update(f"CRISPR Pipeline Runner | {summary or 'no samples'} | {self.message}")
             self.update_details()
+
+        def _restore_table_cursor(self, table: DataTable, row: int) -> None:
+            try:
+                table.move_cursor(row=row, column=0, animate=False)
+            except TypeError:
+                try:
+                    table.move_cursor(row=row)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        def _ignore_table_event(self) -> bool:
+            return self._refreshing_table or time.monotonic() < self._ignore_table_events_until
 
         def update_details(self) -> None:
             if not self.selected_sample:
@@ -710,10 +743,14 @@ def run_tui(manager: RunnerManager) -> None:
             self.query_one("#log", Static).update(Text.from_ansi(log_tail))
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if self._ignore_table_event() or event.row_key is None:
+                return
             self.selected_sample = str(event.row_key.value)
             self.update_details()
 
         def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+            if self._ignore_table_event() or event.row_key is None:
+                return
             self.selected_sample = str(event.row_key.value)
             self.update_details()
 
