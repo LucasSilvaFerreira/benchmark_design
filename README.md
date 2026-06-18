@@ -16,9 +16,9 @@ The page includes three tabs:
 
 ## Computational Resources
 
-Open `Computational Resource Parameters` in the configurator to edit global Nextflow execution settings. The panel reads defaults from the uploaded base `nextflow.config`, sample custom config uploads when accepted, and actual sample `nextflow.config` files during Load Directory. It shows those config defaults under each input and writes the selected overrides into every exported sample `nextflow.config`.
+Use `Show Resource Columns` in the configurator to edit per-sample Nextflow execution settings at the end of the sample table. The resource columns read defaults from the uploaded base `nextflow.config`, sample custom config uploads when accepted, and actual sample `nextflow.config` files during Load Directory. Resource columns can be force-synced like the other sample parameters, and each sample's selected resources are written into that sample's exported `nextflow.config`.
 
-The resource profile selector provides five presets. `Large scale datasets (> 1M cells and 20k guides)` applies the requested high-end settings, including `pullTimeout = '60m'`, `max_cpus = 12`, `max_memory = 600.GB`, 600 GB MuData/AnnData merge steps, higher mapping and SCEPTRE retry resources, CLEANSER scratch/disk settings, and GPU queue fields for PerTurbo processes.
+The per-row resource profile selector provides five presets. `Large scale datasets (> 1M cells and 20k guides)` applies the requested high-end settings, including `pullTimeout = '60m'`, `max_cpus = 12`, `max_memory = 600.GB`, 600 GB MuData/AnnData merge steps, higher mapping and SCEPTRE retry resources, CLEANSER scratch/disk settings, and GPU queue fields for PerTurbo processes.
 
 ## Local Preview
 

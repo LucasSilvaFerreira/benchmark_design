@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Download, Plus, Trash2, Upload, Link, Link2Off, FileType, Check, AlignLeft, Info, Terminal, FolderOpen, Save, Github, KeyRound, Shield, SlidersHorizontal, Cpu, RotateCcw } from 'lucide-react';
+import { Download, Plus, Trash2, Upload, Link, Link2Off, FileType, Check, AlignLeft, Info, Terminal, FolderOpen, Save, Github, KeyRound, Shield, SlidersHorizontal, RotateCcw } from 'lucide-react';
 
 // --- Schema Definition ---
 // Priority fields are ordered first.
@@ -162,6 +162,10 @@ const resourceFieldGroups = [
     ]
   }
 ];
+
+const resourceFields = resourceFieldGroups.reduce((fields, group) => fields.concat(group.fields), []);
+const resourceFieldKeys = new Set(resourceFields.map(field => field.key));
+const RESOURCE_PROFILE_KEY = '__resource_profile';
 
 const resourceProfiles = [
   {
@@ -362,6 +366,24 @@ const generateDefaultParams = () => {
 };
 
 const generateDefaultResourceSettings = () => ({ ...defaultResourceSettings });
+
+const createDefaultResourceState = () => {
+  const defaults = generateDefaultResourceSettings();
+  return {
+    resourceSettings: { ...defaults },
+    resourceDefaults: { ...defaults },
+    resourceProfile: ''
+  };
+};
+
+const createId = () => {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  const timePart = Date.now().toString(36);
+  return `id_${timePart}_${randomPart}`;
+};
 
 const hasResourceValue = (value) => value !== undefined && value !== null && value !== '';
 
@@ -660,6 +682,16 @@ const hasResourceConfigContent = (content) => (
   /withName:\s*['"]/.test(content)
 );
 
+const withSampleResourceState = (sample, fallbackDefaults) => {
+  const defaults = normalizeResourceSettings(sample.resourceDefaults || fallbackDefaults);
+  return {
+    ...sample,
+    resourceDefaults: defaults,
+    resourceSettings: normalizeResourceSettings(sample.resourceSettings || defaults),
+    resourceProfile: sample.resourceProfile || ''
+  };
+};
+
 // --- Config File Parser ---
 const parseConfigFile = (content, schema) => {
   const extractedParams = {};
@@ -699,13 +731,14 @@ const parseConfigFile = (content, schema) => {
 export default function App() {
   const [samples, setSamples] = useState([
     { 
-      id: crypto.randomUUID(), 
+      id: createId(), 
       name: 'Sample 1', 
       file: null, 
       fileName: '', 
       sampleConfigFileName: '', 
       sampleConfigContent: '', 
-      params: generateDefaultParams() 
+      params: generateDefaultParams(),
+      ...createDefaultResourceState()
     }
   ]);
   const [forcedColumns, setForcedColumns] = useState({});
@@ -724,29 +757,35 @@ export default function App() {
   const [mainNfContent, setMainNfContent] = useState('');
   const [mainNfFileName, setMainNfFileName] = useState('');
   const [showResourceSettings, setShowResourceSettings] = useState(false);
-  const [resourceSettings, setResourceSettings] = useState(generateDefaultResourceSettings());
   const [configResourceDefaults, setConfigResourceDefaults] = useState(generateDefaultResourceSettings());
 
   // --- Handlers ---
   const addSample = () => {
     // If there are forced columns, inherit their values from the first sample
     const newParams = generateDefaultParams();
+    const newResourceState = createDefaultResourceState();
     if (samples.length > 0) {
       Object.keys(forcedColumns).forEach(key => {
-        if (forcedColumns[key]) {
+        if (forcedColumns[key] && resourceFieldKeys.has(key)) {
+          newResourceState.resourceSettings[key] = samples[0].resourceSettings?.[key];
+        } else if (forcedColumns[key] && key === RESOURCE_PROFILE_KEY) {
+          newResourceState.resourceProfile = samples[0].resourceProfile || '';
+          newResourceState.resourceSettings = { ...newResourceState.resourceSettings, ...(samples[0].resourceSettings || {}) };
+        } else if (forcedColumns[key]) {
           newParams[key] = samples[0].params[key];
         }
       });
     }
     
     setSamples([...samples, { 
-      id: crypto.randomUUID(), 
+      id: createId(), 
       name: `Sample_${samples.length + 1}`, 
       file: null, 
       fileName: '',
       sampleConfigFileName: '',
       sampleConfigContent: '',
-      params: newParams 
+      params: newParams,
+      ...newResourceState
     }]);
   };
 
@@ -776,49 +815,147 @@ export default function App() {
       const isForcedNow = !prev[key];
       if (isForcedNow && samples.length > 0) {
         // Sync all rows to the value of the first row immediately upon forcing
-        const firstValue = samples[0].params[key];
-        setSamples(currentSamples => 
-          currentSamples.map(s => ({ ...s, params: { ...s.params, [key]: firstValue } }))
-        );
+        if (resourceFieldKeys.has(key)) {
+          const firstValue = samples[0].resourceSettings?.[key];
+          setSamples(currentSamples =>
+            currentSamples.map(s => ({
+              ...s,
+              resourceSettings: { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}), [key]: firstValue }
+            }))
+          );
+        } else if (key === RESOURCE_PROFILE_KEY) {
+          const firstProfile = samples[0].resourceProfile || '';
+          const firstResources = { ...generateDefaultResourceSettings(), ...(samples[0].resourceSettings || {}) };
+          setSamples(currentSamples =>
+            currentSamples.map(s => ({
+              ...s,
+              resourceProfile: firstProfile,
+              resourceSettings: { ...firstResources }
+            }))
+          );
+        } else {
+          const firstValue = samples[0].params[key];
+          setSamples(currentSamples => 
+            currentSamples.map(s => ({ ...s, params: { ...s.params, [key]: firstValue } }))
+          );
+        }
       }
       return { ...prev, [key]: isForcedNow };
     });
   };
 
-  const updateResourceSetting = (key, value) => {
-    setResourceSettings(prev => ({ ...prev, [key]: value }));
-  };
-
-  const resetResourceSettingsToConfigDefaults = () => {
-    const confirmed = window.confirm(
-      "Reset Computational Resource parameters to the defaults parsed from the uploaded base config?\n\nAll current resource edits will be replaced."
-    );
-    if (confirmed) {
-      setResourceSettings({ ...configResourceDefaults });
+  const updateResourceSetting = (sampleId, key, value) => {
+    if (forcedColumns[key]) {
+      setSamples(samples.map(s => ({
+        ...s,
+        resourceSettings: { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}), [key]: value }
+      })));
+    } else {
+      setSamples(samples.map(s => s.id === sampleId ? {
+        ...s,
+        resourceSettings: { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}), [key]: value }
+      } : s));
     }
   };
 
-  const applyResourceProfile = (profileKey) => {
+  const resetResourceSettingsToConfigDefaults = (sampleId) => {
+    const confirmed = window.confirm(
+      "Reset this sample's Computational Resource parameters to the defaults parsed from its config?\n\nCurrent resource edits for this sample will be replaced."
+    );
+    if (confirmed) {
+      const targetSample = samples.find(s => s.id === sampleId);
+      const targetDefaults = normalizeResourceSettings(targetSample?.resourceDefaults || configResourceDefaults);
+      setSamples(samples.map(s => {
+        if (s.id === sampleId) {
+          return {
+            ...s,
+            resourceSettings: targetDefaults,
+            resourceProfile: ''
+          };
+        }
+        const syncedSettings = resourceFields.reduce((settings, field) => {
+          if (forcedColumns[field.key]) {
+            settings[field.key] = targetDefaults[field.key];
+          }
+          return settings;
+        }, { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}) });
+        return {
+          ...s,
+          resourceSettings: syncedSettings
+        };
+      }));
+    }
+  };
+
+  const applyResourceProfile = (sampleId, profileKey) => {
     if (!profileKey) return;
     const profile = resourceProfiles.find(item => item.key === profileKey);
     if (!profile) return;
     const confirmed = window.confirm(
-      `Apply resource profile "${profile.label}"?\n\nAll Computational Resource parameters will be transformed into this profile's values for every exported sample.`
+      `Apply resource profile "${profile.label}"?\n\nAll Computational Resource parameters for ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'every synced sample' : 'this sample'} will be transformed into this profile's values.`
     );
     if (confirmed) {
-      setResourceSettings(prev => ({ ...prev, ...profile.values }));
+      if (forcedColumns[RESOURCE_PROFILE_KEY]) {
+        setSamples(samples.map(s => ({
+          ...s,
+          resourceProfile: profile.key,
+          resourceSettings: { ...generateDefaultResourceSettings(), ...profile.values }
+        })));
+      } else {
+        setSamples(samples.map(s => {
+          if (s.id === sampleId) {
+            return {
+              ...s,
+              resourceProfile: profile.key,
+              resourceSettings: { ...generateDefaultResourceSettings(), ...profile.values }
+            };
+          }
+          const syncedSettings = resourceFields.reduce((settings, field) => {
+            if (forcedColumns[field.key]) {
+              settings[field.key] = profile.values[field.key];
+            }
+            return settings;
+          }, { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}) });
+          return {
+            ...s,
+            resourceSettings: syncedSettings
+          };
+        }));
+      }
     }
   };
 
-  const offerResourceSettingsFromConfig = (content, label) => {
+  const offerResourceSettingsFromConfig = (content, label, sampleId = null) => {
     if (!hasResourceConfigContent(content)) return;
     const parsedResources = parseResourceConfig(content);
     const confirmed = window.confirm(
-      `Load Computational Resource defaults from ${label}?\n\nThis will update the global resource panel from that config file. Sample table parameters from the config are still loaded separately.`
+      `Load Computational Resource defaults from ${label}?\n\nThis will update ${sampleId ? 'that sample resource row' : 'all sample resource rows'} from the config file. Sample table parameters from the config are still loaded separately.`
     );
     if (confirmed) {
       setConfigResourceDefaults(parsedResources);
-      setResourceSettings(parsedResources);
+      if (sampleId) {
+        setSamples(currentSamples => currentSamples.map(s => s.id === sampleId ? {
+          ...s,
+          resourceDefaults: parsedResources,
+          resourceSettings: parsedResources,
+          resourceProfile: ''
+        } : {
+          ...s,
+          resourceSettings: resourceFields.reduce((settings, field) => {
+            if (forcedColumns[field.key]) {
+              settings[field.key] = parsedResources[field.key];
+            }
+            return settings;
+          }, { ...generateDefaultResourceSettings(), ...(s.resourceSettings || {}) })
+        }));
+      } else {
+        setSamples(currentSamples => currentSamples.map(s => ({
+          ...s,
+          resourceDefaults: parsedResources,
+          resourceSettings: parsedResources,
+          resourceProfile: ''
+        })));
+      }
     }
   };
 
@@ -836,7 +973,7 @@ export default function App() {
       reader.onload = (e) => {
         const content = e.target.result;
         const parsedParams = parseConfigFile(content, paramSchema);
-        offerResourceSettingsFromConfig(content, `sample config "${file.name}"`);
+        offerResourceSettingsFromConfig(content, `sample config "${file.name}"`, id);
 
         setSamples(prevSamples => prevSamples.map(s => {
           const isTarget = s.id === id;
@@ -875,7 +1012,12 @@ export default function App() {
         setMainNfContent(content);
         const parsedResources = parseResourceConfig(content);
         setConfigResourceDefaults(parsedResources);
-        setResourceSettings(parsedResources);
+        setSamples(prevSamples => prevSamples.map(sample => ({
+          ...sample,
+          resourceDefaults: parsedResources,
+          resourceSettings: parsedResources,
+          resourceProfile: ''
+        })));
         
         // Find parameters in the global config
         const parsedParams = parseConfigFile(content, paramSchema);
@@ -908,8 +1050,7 @@ export default function App() {
         googleCreds,
         repoBranch,
         mainNfContent,   // <--- Safely capturing the base config data
-        mainNfFileName,  // <--- Safely capturing the base config filename
-        resourceSettings
+        mainNfFileName   // <--- Safely capturing the base config filename
       },
       forcedColumns,
       samples: samples.map(sample => ({
@@ -918,7 +1059,10 @@ export default function App() {
         fileName: sample.fileName,
         sampleConfigFileName: sample.sampleConfigFileName,
         sampleConfigContent: sample.sampleConfigContent,
-        params: { ...sample.params }
+        params: { ...sample.params },
+        resourceSettings: { ...generateDefaultResourceSettings(), ...(sample.resourceSettings || {}) },
+        resourceDefaults: { ...generateDefaultResourceSettings(), ...(sample.resourceDefaults || configResourceDefaults) },
+        resourceProfile: sample.resourceProfile || ''
       }))
     };
 
@@ -943,7 +1087,7 @@ export default function App() {
         
         // Handle new full-session format
         if (data.version && data.samples) {
-          const hasSavedResourceSettings = data.globalSettings && data.globalSettings.resourceSettings;
+          let fallbackResourceSettings = generateDefaultResourceSettings();
           if (data.globalSettings) {
             setBaseOutputDir(data.globalSettings.baseOutputDir || '');
             setAnalysisName(data.globalSettings.analysisName || '');
@@ -955,53 +1099,39 @@ export default function App() {
             setMainNfContent(restoredMainConfig);   // <--- Restoring base config
             setMainNfFileName(data.globalSettings.mainNfFileName || ''); // <--- Restoring base filename
             setConfigResourceDefaults(parsedResources);
-            setResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
+            fallbackResourceSettings = normalizeResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
           }
           if (data.forcedColumns) {
             setForcedColumns(data.forcedColumns);
           }
           const restoredSamples = data.samples.map(s => ({
-            ...s,
-            file: null // The file handle is null, but the strings/data attached are safe
+            ...withSampleResourceState(
+              {
+                ...s,
+                file: null,
+                ...(s.sampleConfigContent && hasResourceConfigContent(s.sampleConfigContent) && !s.resourceSettings
+                  ? {
+                      resourceDefaults: parseResourceConfig(s.sampleConfigContent),
+                      resourceSettings: parseResourceConfig(s.sampleConfigContent)
+                    }
+                  : {})
+              },
+              fallbackResourceSettings
+            )
           }));
-          if (!hasSavedResourceSettings) {
-            const sampleResourceSnapshots = restoredSamples
-              .filter(sample => sample.sampleConfigContent && hasResourceConfigContent(sample.sampleConfigContent))
-              .map(sample => ({
-                sampleName: sample.name,
-                resources: parseResourceConfig(sample.sampleConfigContent)
-              }));
-            if (sampleResourceSnapshots.length > 0) {
-              const firstSnapshot = sampleResourceSnapshots[0];
-              const uniqueResourceSignatures = new Set(
-                sampleResourceSnapshots.map(snapshot => resourceSettingsSignature(snapshot.resources))
-              );
-              if (uniqueResourceSignatures.size === 1) {
-                setConfigResourceDefaults(firstSnapshot.resources);
-                setResourceSettings(firstSnapshot.resources);
-              } else {
-                const confirmed = window.confirm(
-                  `This session contains different Computational Resource settings across stored sample configs.\n\nThe configurator currently exports one global resource configuration for all samples. Apply the resource settings from "${firstSnapshot.sampleName}" to the global panel?`
-                );
-                if (confirmed) {
-                  setConfigResourceDefaults(firstSnapshot.resources);
-                  setResourceSettings(firstSnapshot.resources);
-                }
-              }
-            }
-          }
           setSamples(restoredSamples);
         } 
         // Fallback for older export format (array of objects)
         else if (Array.isArray(data)) {
           const restoredSamples = data.map(s => ({
-            id: crypto.randomUUID(),
+            id: createId(),
             name: s.sample_name || 'Restored Sample',
             file: null,
             fileName: s.attached_file || '',
             sampleConfigFileName: '',
             sampleConfigContent: '',
-            params: { ...generateDefaultParams(), ...s.parameters }
+            params: { ...generateDefaultParams(), ...s.parameters },
+            ...createDefaultResourceState()
           }));
           setSamples(restoredSamples);
         } else {
@@ -1031,6 +1161,7 @@ export default function App() {
       const data = JSON.parse(sessionText);
 
       if (data.version && data.samples) {
+        let fallbackResourceSettings = generateDefaultResourceSettings();
         if (data.globalSettings) {
           setBaseOutputDir(data.globalSettings.baseOutputDir || '');
           setAnalysisName(data.globalSettings.analysisName || '');
@@ -1042,13 +1173,11 @@ export default function App() {
           setMainNfContent(restoredMainConfig);
           setMainNfFileName(data.globalSettings.mainNfFileName || '');
           setConfigResourceDefaults(parsedResources);
-          setResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
+          fallbackResourceSettings = normalizeResourceSettings({ ...parsedResources, ...(data.globalSettings.resourceSettings || {}) });
         }
         if (data.forcedColumns) {
           setForcedColumns(data.forcedColumns);
         }
-        
-        const sampleResourceSnapshots = [];
 
         // Asynchronously process all samples to read their actual config files from the directory
         const restoredSamples = await Promise.all(data.samples.map(async (s) => {
@@ -1060,6 +1189,9 @@ export default function App() {
           }
 
           let finalParams = { ...s.params };
+          let finalResourceDefaults = s.resourceDefaults || fallbackResourceSettings;
+          let finalResourceSettings = s.resourceSettings || finalResourceDefaults;
+          let finalResourceProfile = s.resourceProfile || '';
 
           // Dynamically read the actual nextflow.config from the sample directory
           // This ensures if the user manually modified the configs after exporting, we capture those updates!
@@ -1069,10 +1201,10 @@ export default function App() {
               const configText = await sampleConfigFile.text();
               const parsedParams = parseConfigFile(configText, paramSchema);
               if (hasResourceConfigContent(configText)) {
-                sampleResourceSnapshots.push({
-                  sampleName: safeName,
-                  resources: parseResourceConfig(configText)
-                });
+                const parsedResources = parseResourceConfig(configText);
+                finalResourceDefaults = parsedResources;
+                finalResourceSettings = parsedResources;
+                finalResourceProfile = '';
               }
               // Merge/Override with the parameters actually found in the sample's directory config
               finalParams = { ...finalParams, ...parsedParams };
@@ -1082,31 +1214,16 @@ export default function App() {
           }
 
           return {
-            ...s,
-            file: foundFile, // Restore the actual File object!
-            params: finalParams
+            ...withSampleResourceState({
+              ...s,
+              file: foundFile, // Restore the actual File object!
+              params: finalParams,
+              resourceDefaults: finalResourceDefaults,
+              resourceSettings: finalResourceSettings,
+              resourceProfile: finalResourceProfile
+            }, fallbackResourceSettings)
           };
         }));
-
-        if (sampleResourceSnapshots.length > 0) {
-          const firstSnapshot = sampleResourceSnapshots[0];
-          const uniqueResourceSignatures = new Set(
-            sampleResourceSnapshots.map(snapshot => resourceSettingsSignature(snapshot.resources))
-          );
-
-          if (uniqueResourceSignatures.size === 1) {
-            setConfigResourceDefaults(firstSnapshot.resources);
-            setResourceSettings(firstSnapshot.resources);
-          } else {
-            const confirmed = window.confirm(
-              `The loaded directory has different Computational Resource settings across sample nextflow.config files.\n\nThe configurator currently exports one global resource configuration for all samples. Apply the resource settings from "${firstSnapshot.sampleName}" to the global panel?`
-            );
-            if (confirmed) {
-              setConfigResourceDefaults(firstSnapshot.resources);
-              setResourceSettings(firstSnapshot.resources);
-            }
-          }
-        }
 
         setSamples(restoredSamples);
       } else {
@@ -1142,8 +1259,7 @@ export default function App() {
         googleCreds,
         repoBranch,
         mainNfContent,
-        mainNfFileName,
-        resourceSettings
+        mainNfFileName
       },
       forcedColumns,
       samples: samples.map(sample => ({
@@ -1152,7 +1268,10 @@ export default function App() {
         fileName: sample.fileName,
         sampleConfigFileName: sample.sampleConfigFileName,
         sampleConfigContent: sample.sampleConfigContent,
-        params: { ...sample.params }
+        params: { ...sample.params },
+        resourceSettings: { ...generateDefaultResourceSettings(), ...(sample.resourceSettings || {}) },
+        resourceDefaults: { ...generateDefaultResourceSettings(), ...(sample.resourceDefaults || configResourceDefaults) },
+        resourceProfile: sample.resourceProfile || ''
       }))
     };
     zip.file("session_backup.json", JSON.stringify(sessionData, null, 2));
@@ -1262,7 +1381,7 @@ export default function App() {
         nfConfigContent += '}\n';
       }
 
-      nfConfigContent += buildResourceOverrideConfig(resourceSettings);
+      nfConfigContent += buildResourceOverrideConfig(sample.resourceSettings || generateDefaultResourceSettings());
 
       // Save the final substituted parameters as a single nextflow.config inside the folder
       folder.file('nextflow.config', nfConfigContent);
@@ -1438,18 +1557,19 @@ exec python3 pipeline_runner.py "$@"
     );
   };
 
-  const formatResourceDefault = (field) => {
-    const value = configResourceDefaults[field.key];
+  const formatResourceDefault = (sample, field) => {
+    const value = sample.resourceDefaults?.[field.key] ?? configResourceDefaults[field.key];
     if (!hasResourceValue(value)) return 'Config default: inherited';
     if (field.type === 'boolean') return `Config default: ${value ? 'true' : 'false'}`;
     if (field.suffix) return `Config default: ${value} ${field.suffix}`;
     return `Config default: ${value}`;
   };
 
-  const renderResourceInput = (field) => {
-    const rawValue = resourceSettings[field.key];
+  const renderResourceInput = (sample, field) => {
+    const rawValue = sample.resourceSettings?.[field.key];
     const value = rawValue !== undefined ? rawValue : '';
-    const inputClasses = "w-full text-sm border border-cyan-300 rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 bg-white px-3 py-2 text-slate-800";
+    const isForced = forcedColumns[field.key];
+    const inputClasses = `w-full text-sm border rounded-md shadow-sm focus:ring-cyan-500 focus:border-cyan-500 px-3 py-2 text-slate-800 ${isForced ? 'bg-cyan-100 border-cyan-500' : 'bg-white border-cyan-300'}`;
 
     if (field.type === 'boolean') {
       return (
@@ -1457,7 +1577,7 @@ exec python3 pipeline_runner.py "$@"
           <input
             type="checkbox"
             checked={Boolean(value)}
-            onChange={(event) => updateResourceSetting(field.key, event.target.checked)}
+            onChange={(event) => updateResourceSetting(sample.id, field.key, event.target.checked)}
             className="h-4 w-4 rounded border-cyan-300 text-cyan-600 focus:ring-cyan-500"
           />
           Enabled
@@ -1469,7 +1589,7 @@ exec python3 pipeline_runner.py "$@"
       return (
         <select
           value={value || 'inherit'}
-          onChange={(event) => updateResourceSetting(field.key, event.target.value)}
+          onChange={(event) => updateResourceSetting(sample.id, field.key, event.target.value)}
           className={inputClasses}
         >
           {field.options.map(option => (
@@ -1487,6 +1607,7 @@ exec python3 pipeline_runner.py "$@"
           type={field.type === 'number' ? 'number' : 'text'}
           value={value}
           onChange={(event) => updateResourceSetting(
+            sample.id,
             field.key,
             field.type === 'number'
               ? (event.target.value === '' ? '' : Number(event.target.value))
@@ -1667,89 +1788,24 @@ exec python3 pipeline_runner.py "$@"
           </div>
         </div>
 
-        {/* Row 3: Computational Resource Parameters */}
-        <div className="pt-4 border-t border-cyan-100">
-          <button
-            type="button"
-            onClick={() => setShowResourceSettings(!showResourceSettings)}
-            className="w-full flex items-center justify-between gap-4 rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-left hover:bg-cyan-100 transition-colors"
-          >
-            <span className="flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-cyan-600 text-white">
-                <SlidersHorizontal size={18} />
-              </span>
-              <span>
-                <span className="block text-sm font-bold text-cyan-950">Computational Resource Parameters</span>
-                <span className="block text-xs text-cyan-700">Global Nextflow process resources, retries, Singularity timeout, and GPU queues.</span>
-              </span>
-            </span>
-            <span className="text-xs font-semibold text-cyan-800 bg-white border border-cyan-200 rounded-full px-3 py-1">
-              {showResourceSettings ? 'Hide' : 'Show'}
-            </span>
-          </button>
-
-          {showResourceSettings && (
-            <div className="mt-4 rounded-xl border border-cyan-200 bg-cyan-50/60 p-4">
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {resourceFieldGroups.map(group => (
-                  <div key={group.title} className="rounded-lg border border-cyan-200 bg-white p-4 shadow-sm">
-                    <h3 className="text-sm font-bold text-cyan-950 flex items-center gap-2 mb-3">
-                      <Cpu size={15} className="text-cyan-600" />
-                      {group.title}
-                    </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {group.fields.map(field => (
-                        <div key={field.key}>
-                          <label className="block text-xs font-semibold text-cyan-900 mb-1">
-                            {field.label}
-                          </label>
-                          {renderResourceInput(field)}
-                          <div className="mt-1 text-[10px] font-medium text-cyan-700">
-                            {formatResourceDefault(field)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 rounded-lg border border-cyan-300 bg-white p-4 flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold uppercase tracking-wide text-cyan-900 mb-2">
-                    Resource Profile
-                  </label>
-                  <select
-                    value=""
-                    onChange={(event) => applyResourceProfile(event.target.value)}
-                    className="w-full border border-cyan-300 rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 bg-white"
-                  >
-                    <option value="">Apply a resource profile...</option>
-                    {resourceProfiles.map(profile => (
-                      <option key={profile.key} value={profile.key}>{profile.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-cyan-700 mt-2">
-                    Applying a profile replaces all resource fields after confirmation. The large-scale profile uses the requested high-end values.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={resetResourceSettingsToConfigDefaults}
-                  className="inline-flex items-center justify-center gap-2 border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 px-4 py-2 rounded-md text-sm font-semibold transition-colors"
-                >
-                  <RotateCcw size={16} />
-                  Reset To Config Defaults
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        
       </div>
 
       {/* Main Table Container */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col mb-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 border-b border-slate-200 bg-slate-50">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800">Sample Configuration Matrix</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Resource columns are per sample and can be force-synced like other parameters.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowResourceSettings(!showResourceSettings)}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-semibold border transition-colors ${showResourceSettings ? 'bg-cyan-700 text-white border-cyan-700 hover:bg-cyan-800' : 'bg-white text-cyan-800 border-cyan-300 hover:bg-cyan-50'}`}
+          >
+            <SlidersHorizontal size={16} />
+            {showResourceSettings ? 'Hide Resource Columns' : 'Show Resource Columns'}
+          </button>
+        </div>
         <div className="overflow-x-auto flex-1 h-[500px]">
           <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead className="bg-slate-50 sticky top-0 z-20 shadow-sm">
@@ -1787,6 +1843,48 @@ exec python3 pipeline_runner.py "$@"
                     </th>
                   );
                 })}
+                {showResourceSettings && resourceFields.map((field) => {
+                  const isForced = forcedColumns[field.key];
+                  return (
+                    <th
+                      key={`resource-${field.key}`}
+                      className={`p-3 border-b border-cyan-200 min-w-[210px] align-bottom transition-colors duration-300 ${isForced ? 'bg-cyan-200 border-cyan-300' : 'bg-cyan-50'}`}
+                    >
+                      <div className="flex flex-col gap-2 h-full justify-end">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className={`text-sm font-medium break-words whitespace-normal leading-tight ${isForced ? 'text-cyan-950' : 'text-cyan-900'}`}>
+                            {field.label}
+                            <span className="ml-1 inline-block px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-[10px] uppercase font-bold tracking-wider align-middle">Resource</span>
+                          </span>
+                          <button
+                            onClick={() => toggleForceColumn(field.key)}
+                            className={`p-1.5 rounded-md transition-all flex-shrink-0 ${isForced ? 'bg-cyan-600 text-white shadow-inner hover:bg-cyan-700' : 'bg-white text-cyan-500 border border-cyan-200 hover:bg-cyan-100 hover:text-cyan-700'}`}
+                            title={isForced ? "Unlock resource column" : "Force same across all samples"}
+                          >
+                            {isForced ? <Link size={14} /> : <Link2Off size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    </th>
+                  );
+                })}
+                {showResourceSettings && (
+                  <th className={`p-3 border-b border-cyan-200 min-w-[260px] align-bottom transition-colors duration-300 ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'bg-cyan-200 border-cyan-300' : 'bg-cyan-50'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium break-words whitespace-normal leading-tight text-cyan-900">
+                        Resource Profile
+                        <span className="ml-1 inline-block px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 text-[10px] uppercase font-bold tracking-wider align-middle">Resource</span>
+                      </span>
+                      <button
+                        onClick={() => toggleForceColumn(RESOURCE_PROFILE_KEY)}
+                        className={`p-1.5 rounded-md transition-all flex-shrink-0 ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'bg-cyan-600 text-white shadow-inner hover:bg-cyan-700' : 'bg-white text-cyan-500 border border-cyan-200 hover:bg-cyan-100 hover:text-cyan-700'}`}
+                        title={forcedColumns[RESOURCE_PROFILE_KEY] ? "Unlock resource profile" : "Force same profile across all samples"}
+                      >
+                        {forcedColumns[RESOURCE_PROFILE_KEY] ? <Link size={14} /> : <Link2Off size={14} />}
+                      </button>
+                    </div>
+                  </th>
+                )}
                 <th className="p-3 border-b border-slate-200 w-16 sticky right-0 bg-slate-50 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] z-20"></th>
               </tr>
             </thead>
@@ -1876,6 +1974,43 @@ exec python3 pipeline_runner.py "$@"
                         </td>
                      );
                   })}
+                  {showResourceSettings && resourceFields.map(field => {
+                     const isForced = forcedColumns[field.key];
+                     return (
+                        <td key={`resource-${field.key}`} className={`p-3 align-middle border-l border-cyan-100 ${isForced ? 'bg-cyan-100/70' : 'bg-cyan-50/40'}`}>
+                          <div className="flex flex-col gap-1">
+                            {renderResourceInput(sample, field)}
+                            <div className="text-[10px] font-medium text-cyan-700 whitespace-normal leading-tight">
+                              {formatResourceDefault(sample, field)}
+                            </div>
+                          </div>
+                        </td>
+                     );
+                  })}
+                  {showResourceSettings && (
+                    <td className={`p-3 align-top border-l border-cyan-100 ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'bg-cyan-100/70' : 'bg-cyan-50/40'}`}>
+                      <div className="flex flex-col gap-2">
+                        <select
+                          value={sample.resourceProfile || ''}
+                          onChange={(event) => applyResourceProfile(sample.id, event.target.value)}
+                          className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-cyan-500 focus:border-cyan-500 ${forcedColumns[RESOURCE_PROFILE_KEY] ? 'bg-cyan-100 border-cyan-500' : 'bg-white border-cyan-300'}`}
+                        >
+                          <option value="">Apply profile...</option>
+                          {resourceProfiles.map(profile => (
+                            <option key={profile.key} value={profile.key}>{profile.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => resetResourceSettingsToConfigDefaults(sample.id)}
+                          className="inline-flex items-center justify-center gap-1.5 border border-cyan-300 text-cyan-800 bg-white hover:bg-cyan-100 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors"
+                        >
+                          <RotateCcw size={13} />
+                          Reset defaults
+                        </button>
+                      </div>
+                    </td>
+                  )}
                   
                   {/* Delete Row Action */}
                   <td className="p-3 align-middle sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-2px_0_5px_rgba(0,0,0,0.02)] z-10 text-center border-l border-slate-100">
