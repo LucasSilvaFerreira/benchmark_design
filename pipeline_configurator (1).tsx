@@ -1532,12 +1532,13 @@ export default function App() {
           let finalResourceProfile = s.resourceProfile || '';
 
           // Prefer the live pipeline config after the runner has cloned the repository.
-          // Before that exists, fall back to the exported sample-level backup config.
+          // Before that exists, use the exported sample-level config; after launch it
+          // may have been renamed to nextflow.config.backup.
           const sampleConfigFile =
             files.find(f => f.webkitRelativePath.endsWith(`${safeName}/CRISPR_Pipeline/nextflow.config`)) ||
             files.find(f => f.webkitRelativePath.endsWith(`${safeName}/CRISPR-PIPELINE/nextflow.config`)) ||
-            files.find(f => f.webkitRelativePath.endsWith(`${safeName}/nextflow.config.backup`)) ||
-            files.find(f => f.webkitRelativePath.endsWith(`${safeName}/nextflow.config`));
+            files.find(f => f.webkitRelativePath.endsWith(`${safeName}/nextflow.config`)) ||
+            files.find(f => f.webkitRelativePath.endsWith(`${safeName}/nextflow.config.backup`));
           if (sampleConfigFile) {
             try {
               const configText = await sampleConfigFile.text();
@@ -1725,9 +1726,9 @@ export default function App() {
 
       nfConfigContent += buildResourceOverrideConfig(sample.resourceSettings || generateDefaultResourceSettings());
 
-      // Save the generated config as a sample-level backup. The runner uses it
-      // to seed CRISPR_Pipeline/nextflow.config when the pipeline dir is created.
-      folder.file('nextflow.config.backup', nfConfigContent);
+      // Save the generated config at sample level. The runner renames this file
+      // to nextflow.config.backup after seeding CRISPR_Pipeline/nextflow.config.
+      folder.file('nextflow.config', nfConfigContent);
       
       runnerManifest.samples.push({
         name: safeSampleName,

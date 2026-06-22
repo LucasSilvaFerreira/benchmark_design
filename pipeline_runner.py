@@ -106,8 +106,8 @@ def sample_config_candidates(sample_dir: Path) -> list[Path]:
     return [
         sample_dir / "CRISPR_Pipeline" / "nextflow.config",
         sample_dir / "CRISPR-PIPELINE" / "nextflow.config",
-        sample_dir / "nextflow.config.backup",
         sample_dir / "nextflow.config",
+        sample_dir / "nextflow.config.backup",
     ]
 
 
@@ -393,16 +393,18 @@ class RunnerManager:
             shutil.copytree(base_repo, sample_repo, symlinks=True)
             sample_repo_created = True
 
-        config_src = sample.path / "nextflow.config.backup"
-        if not config_src.exists():
-            config_src = sample.path / "nextflow.config"
+        sample_config = sample.path / "nextflow.config"
+        sample_config_backup = sample.path / "nextflow.config.backup"
+        config_src = sample_config if sample_config.exists() else sample_config_backup
         config_dst = sample_repo / "nextflow.config"
         if not config_src.exists():
             raise FileNotFoundError(
-                f"Could not find {sample.path / 'nextflow.config.backup'} or legacy {sample.path / 'nextflow.config'}"
+                f"Could not find {sample_config} or {sample_config_backup}"
             )
         if sample_repo_created or not config_dst.exists():
             shutil.copy2(config_src, config_dst)
+        if sample_config.exists() and config_dst.exists():
+            sample_config.replace(sample_config_backup)
         return sample_repo
 
     def start_sample(self, sample_name: str, mode: str) -> str:
