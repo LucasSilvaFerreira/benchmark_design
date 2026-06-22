@@ -16,7 +16,7 @@ The page includes three tabs:
 
 ## Computational Resources
 
-Use `Show Resource Columns` in the configurator to edit per-sample Nextflow execution settings at the end of the sample table. The resource columns read defaults from the uploaded base `nextflow.config`, sample custom config uploads when accepted, and actual sample `nextflow.config` files during Load Directory. Resource columns can be force-synced like the other sample parameters, and each sample's selected resources are written into that sample's exported `nextflow.config`.
+Use `Show Resource Columns` in the configurator to edit per-sample Nextflow execution settings at the end of the sample table. The resource columns read defaults from the uploaded base `nextflow.config`, sample custom config uploads when accepted, and sample configs during Load Directory. Directory reload prefers `<sample>/CRISPR_Pipeline/nextflow.config` after the runner has cloned the pipeline, then falls back to `<sample>/nextflow.config.backup` before the pipeline directory exists. Resource columns can be force-synced like the other sample parameters, and each sample's selected resources are written into that sample's exported `nextflow.config.backup`.
 
 When a config does not define a resource field, the configurator falls back to the Pinello Lab CRISPR Pipeline `dev` branch `nextflow.config` baseline. Fields absent from that baseline, such as `singularity.pullTimeout`, are shown as unset.
 
@@ -84,6 +84,7 @@ The exported ZIP contains:
 - `run_all.sh`: launcher for the Textual runner
 - `pipeline_runner.py`: TUI and CLI runner
 - `runner_manifest.json`: generated sample metadata
+- `<sample>/nextflow.config.backup`: generated per-sample config copied into `CRISPR_Pipeline/nextflow.config` when the sample pipeline directory is first created
 - `runner_state.json`: created after first runner launch
 - `logs/<sample>/`: archived run logs
 - `<sample>/run.pid` and `<sample>/run.log`: compatibility files for quick status/log checks

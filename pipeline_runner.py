@@ -102,6 +102,22 @@ def parse_legacy_run_sh(path: Path) -> dict[str, str]:
     return parsed
 
 
+def sample_config_candidates(sample_dir: Path) -> list[Path]:
+    return [
+        sample_dir / "CRISPR_Pipeline" / "nextflow.config",
+        sample_dir / "CRISPR-PIPELINE" / "nextflow.config",
+        sample_dir / "nextflow.config.backup",
+        sample_dir / "nextflow.config",
+    ]
+
+
+def first_existing_sample_config(sample_dir: Path) -> Path | None:
+    for path in sample_config_candidates(sample_dir):
+        if path.exists():
+            return path
+    return None
+
+
 def tail_text(path: Path, lines: int = 160) -> str:
     if not path.exists():
         return ""
@@ -196,8 +212,9 @@ class RunnerManager:
             safe_name = str(item["name"]).replace(" ", "_")
             sample_dir = self.root / safe_name
             run_values = parse_legacy_run_sh(sample_dir / "run.sh")
-            config_input = parse_assignment(sample_dir / "nextflow.config", "input")
-            config_outdir = parse_assignment(sample_dir / "nextflow.config", "outdir")
+            config_path = first_existing_sample_config(sample_dir) or (sample_dir / "nextflow.config.backup")
+            config_input = parse_assignment(config_path, "input")
+            config_outdir = parse_assignment(config_path, "outdir")
             fallback_input = f"../{item.get('fileName')}" if item.get("fileName") else f"/path/to/input_for_{safe_name}.tsv"
             fallback_outdir = f"{cleaned_base}{analysis_name}/{safe_name}" if base_output_dir else f"./pipeline_outputs/{safe_name}"
             samples.append(
@@ -369,14 +386,23 @@ class RunnerManager:
                 check=True,
             )
 
+        sample_repo_created = False
         if not sample_repo.exists():
             log_handle.write(f"Copying base repository into {sample_repo}\n")
             log_handle.flush()
             shutil.copytree(base_repo, sample_repo, symlinks=True)
+            sample_repo_created = True
 
-        config_src = sample.path / "nextflow.config"
+        config_src = sample.path / "nextflow.config.backup"
+        if not config_src.exists():
+            config_src = sample.path / "nextflow.config"
         config_dst = sample_repo / "nextflow.config"
-        shutil.copy2(config_src, config_dst)
+        if not config_src.exists():
+            raise FileNotFoundError(
+                f"Could not find {sample.path / 'nextflow.config.backup'} or legacy {sample.path / 'nextflow.config'}"
+            )
+        if sample_repo_created or not config_dst.exists():
+            shutil.copy2(config_src, config_dst)
         return sample_repo
 
     def start_sample(self, sample_name: str, mode: str) -> str:
